@@ -109,7 +109,8 @@ class MaterialAnalysis:
     """Result of analyzing one Principled BSDF material for atlas compatibility."""
 
     def __init__(self, material, key, base_image, normal_image, rough_source, metal_source,
-                 uses_alpha=False, base_color_tint=None):
+                 uses_alpha=False, base_color_tint=None,
+                 emissive_image=None, emissive_strength=0.0):
         self.material = material
         self.key = key
         self.base_image = base_image
@@ -120,6 +121,9 @@ class MaterialAnalysis:
         # (R, G, B) multiply tint from MixRGB/MixColor/ColorFactor nodes
         # between the texture and the Principled BSDF.  None = no tint (1,1,1).
         self.base_color_tint = base_color_tint
+        # Emissive channel
+        self.emissive_image = emissive_image      # bpy.types.Image or None
+        self.emissive_strength = emissive_strength  # float (Emission Strength)
 
 
 class ChannelSource:
@@ -408,6 +412,8 @@ class MaterialAtlasOptimizer:
         normal_input = self._socket_by_names(principled.inputs, ["Normal"])
         rough_input = self._socket_by_names(principled.inputs, ["Roughness"])
         metal_input = self._socket_by_names(principled.inputs, ["Metallic"])
+        emission_input = self._socket_by_names(principled.inputs, ["Emission Color", "Emission"])
+        emission_str_input = self._socket_by_names(principled.inputs, ["Emission Strength"])
 
         if not base_input:
             return None
@@ -432,6 +438,19 @@ class MaterialAtlasOptimizer:
         if metal_input:
             metal_source = self._extract_scalar_or_texture_source(metal_input)
 
+        # Emissive channel — extract texture and strength.
+        emissive_image = None
+        emissive_strength = 0.0
+        if emission_str_input:
+            emissive_strength = float(getattr(emission_str_input, 'default_value', 0.0))
+        if emission_input and emission_input.is_linked:
+            tex_node = self._trace_to_tex_image(emission_input)
+            if tex_node and tex_node.image:
+                emissive_image = tex_node.image
+                # If strength socket is missing, assume 1.0 when a texture is connected
+                if emissive_strength == 0.0 and emission_str_input is None:
+                    emissive_strength = 1.0
+
         # Detect whether alpha is actually used (wired to the Principled BSDF).
         uses_alpha = False
         alpha_input = self._socket_by_names(principled.inputs, ["Alpha"])
@@ -440,8 +459,8 @@ class MaterialAtlasOptimizer:
             uses_alpha = True
 
         # Compatibility key — only blend mode + alpha threshold matter.
-        # Normal/roughness/metallic differences are handled at blit time
-        # (flat-normal fill, scalar fill) so they don't prevent merging.
+        # Normal/roughness/metallic/emissive differences are handled at blit time
+        # (flat fill, scalar fill) so they don't prevent merging.
         alpha_key = 0.0
         if blend == 'CLIP':
             alpha_key = round(float(getattr(material, "alpha_threshold", 0.5)), 4)
@@ -457,6 +476,8 @@ class MaterialAtlasOptimizer:
             metal_source=metal_source,
             uses_alpha=uses_alpha,
             base_color_tint=base_color_tint,
+            emissive_image=emissive_image,
+            emissive_strength=emissive_strength,
         )
 
     def _find_principled(self, material):
@@ -830,10 +851,26 @@ class MaterialAtlasOptimizer:
         orm_img = self._new_image(f"{group_name}_ORM_{size_label}", "Non-Color", atlas_w, atlas_h)
         normal_img = self._new_image(f"{group_name}_Normal_{size_label}", "Non-Color", atlas_w, atlas_h)
 
+        # Only create emissive atlas if at least one material in the group has one.
+        group_has_emissive = any(item.emissive_image is not None for item in group)
+        emissive_img = None
+        # Pre-compute the unified emission strength (the maximum in the group).
+        # Individual tile brightnesses are scaled relative to this so each
+        # tile keeps its original perceived intensity.
+        emissive_max_strength = 1.0
+        if group_has_emissive:
+            emissive_max_strength = max(
+                (item.emissive_strength for item in group if item.emissive_image),
+                default=1.0,
+            )
+            emissive_max_strength = max(emissive_max_strength, 0.001)  # avoid /0
+            emissive_img = self._new_image(f"{group_name}_Emissive_{size_label}", "sRGB", atlas_w, atlas_h)
+
         total_px = atlas_w * atlas_h * 4
         base_pixels = [0.0] * total_px
         orm_pixels = [0.0] * total_px
         normal_pixels = [0.0] * total_px
+        emissive_pixels = [0.0] * total_px if group_has_emissive else None
 
         # Fill defaults: BaseColor = black opaque, ORM = (1,0.5,0,1), Normal = flat (0.5,0.5,1,1)
         for i in range(0, total_px, 4):
@@ -848,6 +885,10 @@ class MaterialAtlasOptimizer:
             normal_pixels[i + 1] = 0.5
             normal_pixels[i + 2] = 1.0
             normal_pixels[i + 3] = 1.0
+
+            # Emissive default: black (no emission)
+            if emissive_pixels is not None:
+                emissive_pixels[i + 3] = 1.0
 
         for tile_idx, item in enumerate(group):
             x_off, y_off = layout["tiles"][tile_idx]
@@ -864,30 +905,40 @@ class MaterialAtlasOptimizer:
             # ORM (Occlusion=1, Roughness, Metallic)
             self._blit_orm(item.rough_source, item.metal_source, orm_pixels, atlas_w, x_off, y_off)
 
+            # Emissive — bake per-tile strength differences into pixel brightness.
+            # ratio = this_material_strength / max_group_strength, applied as a
+            # uniform RGB tint so the single Emission Strength on the atlas BSDF
+            # produces the correct intensity for every tile.
+            if emissive_pixels is not None and item.emissive_image:
+                ratio = item.emissive_strength / emissive_max_strength
+                emissive_tint = (ratio, ratio, ratio) if ratio < 0.999 else None
+                self._blit_rgba(item.emissive_image, emissive_pixels, atlas_w, x_off, y_off,
+                                tint=emissive_tint)
+            # else: keep black (no emission) for this tile
+
         # Write pixel data — use slice assignment (most reliable across versions).
         base_img.pixels[:] = base_pixels
         orm_img.pixels[:] = orm_pixels
         normal_img.pixels[:] = normal_pixels
+        if emissive_img is not None:
+            emissive_img.pixels[:] = emissive_pixels
 
         # update() flushes internal caches so the data is visible.
         base_img.update()
         orm_img.update()
         normal_img.update()
+        if emissive_img is not None:
+            emissive_img.update()
 
         # Pack images into .blend data so the glTF/GLB exporter can embed them.
         # Without this, in-memory-only images may be skipped or exported as black.
-        try:
-            base_img.pack()
-        except Exception:
-            pass
-        try:
-            orm_img.pack()
-        except Exception:
-            pass
-        try:
-            normal_img.pack()
-        except Exception:
-            pass
+        for img in (base_img, orm_img, normal_img, emissive_img):
+            if img is None:
+                continue
+            try:
+                img.pack()
+            except Exception:
+                pass
 
         # --- Build the atlas material node tree ---
         atlas_mat = bpy.data.materials.new(name=f"{group_name}_Material")
@@ -978,6 +1029,26 @@ class MaterialAtlasOptimizer:
 
         links.new(tex_n.outputs["Color"], normal_map.inputs["Color"])
         links.new(normal_map.outputs["Normal"], bsdf.inputs["Normal"])
+
+        # Emissive — only add the texture node and wiring when the group uses it.
+        if emissive_img is not None:
+            tex_emissive = nodes.new(type='ShaderNodeTexImage')
+            tex_emissive.image = emissive_img
+            tex_emissive.label = "Emissive"
+            tex_emissive.location = (-400, -420)
+
+            links.new(uv_map.outputs["UV"], tex_emissive.inputs["Vector"])
+
+            # Blender 4.0+ renamed "Emission" to "Emission Color"
+            emission_color_input = self._socket_by_names(bsdf.inputs, ["Emission Color", "Emission"])
+            if emission_color_input:
+                links.new(tex_emissive.outputs["Color"], emission_color_input)
+
+            # Normalized to 1.0 — all strength differences are already baked
+            # into the emissive pixel brightness (ratio = item / max).
+            emission_str_input = bsdf.inputs.get("Emission Strength")
+            if emission_str_input:
+                emission_str_input.default_value = 1.0
 
         links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
 

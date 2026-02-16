@@ -74,10 +74,11 @@ class OBJECT_OT_quick_export_gltf(bpy.types.Operator):
         default=True,
     )
 
-    export_folder: bpy.props.StringProperty(
-        name="Export Folder",
-        description="Subfolder name for the export (created next to the .blend file)",
-        default="export",
+    export_path: bpy.props.StringProperty(
+        name="Export Path",
+        description="Folder where the file will be exported. Use the folder icon to browse",
+        default="",
+        subtype='DIR_PATH',
     )
 
     filename: bpy.props.StringProperty(
@@ -232,14 +233,24 @@ class OBJECT_OT_quick_export_gltf(bpy.types.Operator):
             return f"{summary} | {stats} | Warnings: {len(warnings)}"
         return f"{summary} | {stats}"
 
-    def execute(self, context):
-        # Determine output directory
+    def _resolve_export_dir(self):
+        """Return the absolute export directory from *export_path*.
+
+        Blender's DIR_PATH subtype may store paths with '//' prefix
+        (blend-file relative).  ``bpy.path.abspath`` resolves that.
+        """
+        raw = self.export_path.strip()
+        if raw:
+            resolved = bpy.path.abspath(raw)
+            return os.path.normpath(resolved)
+
+        # Fallback when the field is empty: <blend dir>/export
         if bpy.data.filepath:
-            blend_dir = os.path.dirname(bpy.data.filepath)
-            out_dir = os.path.join(blend_dir, self.export_folder)
-        else:
-            home_dir = os.path.expanduser("~")
-            out_dir = os.path.join(home_dir, "Desktop", self.export_folder)
+            return os.path.join(os.path.dirname(bpy.data.filepath), "export")
+        return os.path.join(os.path.expanduser("~"), "Desktop", "export")
+
+    def execute(self, context):
+        out_dir = self._resolve_export_dir()
 
         os.makedirs(out_dir, exist_ok=True)
 
@@ -364,7 +375,7 @@ class OBJECT_OT_quick_export_gltf(bpy.types.Operator):
         layout.separator()
 
         layout.prop(self, "filename")
-        layout.prop(self, "export_folder")
+        layout.prop(self, "export_path")
         layout.separator()
 
         col = layout.column(align=True)
@@ -382,13 +393,8 @@ class OBJECT_OT_quick_export_gltf(bpy.types.Operator):
             sub.prop(self, "atlas_debug_report")
 
         layout.separator()
-        # Show output path preview
-        if bpy.data.filepath:
-            blend_dir = os.path.dirname(bpy.data.filepath)
-            out_dir = os.path.join(blend_dir, self.export_folder)
-        else:
-            out_dir = os.path.join("~/Desktop", self.export_folder)
-
+        # Show resolved output path preview
+        out_dir = self._resolve_export_dir()
         ext = ".glb" if self.export_format == 'GLB' else ".gltf"
         layout.label(text=f"Output: {out_dir}/{self.filename}{ext}", icon='FILE')
 
@@ -397,4 +403,9 @@ class OBJECT_OT_quick_export_gltf(bpy.types.Operator):
         if bpy.data.filepath:
             blend_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
             self.filename = blend_name
+            # Default export path: "export" subfolder next to the .blend file
+            if not self.export_path:
+                self.export_path = os.path.join(
+                    os.path.dirname(bpy.data.filepath), "export"
+                ) + os.sep
         return context.window_manager.invoke_props_dialog(self, width=500)

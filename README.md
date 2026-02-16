@@ -104,9 +104,9 @@ Compatible with **Blender 2.80 through 5.0+**.
 
 | Tool | Description |
 |------|-------------|
-| **Export glTF (.glb)** | One-click glTF/GLB export with DCL-optimized defaults: binary format, apply modifiers, no cameras/lights. Automatically realizes collection instances into real geometry so instanced objects are properly included in the GLB. Reports file size after export |
+| **Export glTF (.glb)** | One-click glTF/GLB export with DCL-optimized defaults: binary format, apply modifiers, no cameras/lights. Includes a browsable **Export Path** picker to choose any output folder. Automatically realizes **collection instances** into real geometry so instanced objects (including nested instances) are properly included in the GLB without manual "Make Instances Real". Reports file size after export |
 | **Export Emote GLB** | Export emote animation to GLB with DCL settings: deformation bones only, configurable sampling rate, validation preflight. Warns if file exceeds 1 MB |
-| **Atlas Optimizer** | Non-destructive material/texture atlas pass that runs at export time. Merges 2 or 4 compatible PBR materials into a single atlas material (BaseColor + ORM + Normal) to reduce draw calls. Two modes: **Conservative** (only 512px textures, leaves 1024px intact for quality) and **Aggressive** (downscales 1024→512 for maximum optimization). Handles tinted materials (MixRGB/Multiply nodes), tiled UV detection, alpha materials, and proper sRGB↔Linear color space conversion. Operates on temporary duplicates — original scene is never modified |
+| **Atlas Optimizer** | Non-destructive material/texture atlas pass that runs at export time. Merges 2 or 4 compatible PBR materials into a single atlas material (**BaseColor + ORM + Normal + Emissive**) to reduce draw calls. Two modes: **Conservative** (only merges 512px textures, leaves 1024px intact for quality) and **Aggressive** (downscales 1024→512 for maximum optimization). Handles tinted materials (MixRGB/Multiply nodes), emissive textures with per-tile strength normalization (baked to Emission Strength 1.0), tiled UV detection, alpha materials, and proper sRGB↔Linear color space conversion. Operates on temporary duplicates — original scene is never modified |
 
 ### Documentation
 
