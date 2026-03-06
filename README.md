@@ -28,6 +28,7 @@ A comprehensive Blender extension for Decentraland scene, wearable, and emote cr
   - [Pull Request Workflow](#pull-request-workflow)
   - [Release Workflow](#release-workflow)
   - [Release Process](#release-process)
+  - [Blender Extensions Platform Publishing](#blender-extensions-platform-publishing)
 - [Architecture](#architecture)
   - [Operator Pattern](#operator-pattern)
   - [Dual Install Support](#dual-install-support)
@@ -275,16 +276,33 @@ Triggered when a GitHub Release is published:
 4. **Extract version** - Parse version from release tag (e.g., `v1.3.0` -> `1.3.0`)
 5. **Build** - Build zip with the release version (patches `bl_info` and `blender_manifest.toml`)
 6. **Verify** - Confirm the build artifact exists
-7. **Upload** - Attach the zip to the GitHub Release
+7. **Upload to GitHub** - Attach the zip to the GitHub Release
+8. **Publish to Blender Extensions** - Upload to the [Blender Extensions Platform](https://extensions.blender.org/) (if enabled)
 
 ### Release Process
 
 1. Create a new **Release** on GitHub with a tag like `v1.3.0`
 2. The release workflow runs automatically
 3. The built `decentraland_tools-1.3.0.zip` is attached to the release
-4. Users download the zip from the release page and install it in Blender
+4. If Blender Extensions publishing is enabled, the zip is also uploaded to [extensions.blender.org](https://extensions.blender.org/)
+5. Users can download from GitHub Releases or install directly from within Blender
 
 > Version is driven entirely by the git tag. The build script patches the version into both `bl_info` (for legacy Blender) and `blender_manifest.toml` (for Extensions Platform) at build time.
+
+### Blender Extensions Platform Publishing
+
+Automated publishing to the Blender Extensions Platform is gated behind two settings:
+
+1. **Repository variable** `BLENDER_EXTENSIONS_ENABLED` must be set to `true`
+   - Go to **Settings > Secrets and variables > Actions > Variables**
+   - Create a variable named `BLENDER_EXTENSIONS_ENABLED` with value `true`
+
+2. **Repository secret** `BLENDER_EXTENSIONS_TOKEN` must contain a valid API token
+   - Generate a token at [extensions.blender.org/settings/tokens/](https://extensions.blender.org/settings/tokens/)
+   - Go to **Settings > Secrets and variables > Actions > Secrets**
+   - Create a secret named `BLENDER_EXTENSIONS_TOKEN` with the token value
+
+> The first extension submission must be done manually through the Blender Extensions Platform web UI. Once approved, enable automated publishing by adding the variable and secret above.
 
 ## Architecture
 

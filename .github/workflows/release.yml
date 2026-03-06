@@ -50,10 +50,40 @@ jobs:
           fi
           echo "Artifact ready: $ZIP ($(du -h "$ZIP" | cut -f1))"
 
-      - name: Upload release asset
+      - name: Upload to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.event.release.tag_name }}" \
             dist/decentraland_tools-${{ steps.version.outputs.version }}.zip \
             --clobber
+
+      - name: Publish to Blender Extensions Platform
+        if: vars.BLENDER_EXTENSIONS_ENABLED == 'true'
+        env:
+          BLENDER_EXTENSIONS_TOKEN: ${{ secrets.BLENDER_EXTENSIONS_TOKEN }}
+        run: |
+          ZIP="dist/decentraland_tools-${{ steps.version.outputs.version }}.zip"
+          RELEASE_NOTES="${{ github.event.release.body }}"
+
+          # Fall back to a default note if release body is empty
+          if [ -z "$RELEASE_NOTES" ]; then
+            RELEASE_NOTES="Release ${{ steps.version.outputs.version }}"
+          fi
+
+          echo "Publishing to Blender Extensions Platform..."
+          HTTP_STATUS=$(curl -s -o /tmp/blender_upload_response.txt -w "%{http_code}" \
+            -X POST "https://extensions.blender.org/api/v1/extensions/decentraland_tools/versions/upload/" \
+            -H "Authorization:bearer $BLENDER_EXTENSIONS_TOKEN" \
+            -F "version_file=@$ZIP" \
+            -F "release_notes=$RELEASE_NOTES")
+
+          echo "HTTP Status: $HTTP_STATUS"
+          cat /tmp/blender_upload_response.txt
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Successfully published to Blender Extensions Platform"
+          else
+            echo "ERROR: Blender Extensions Platform upload failed (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
