@@ -139,14 +139,12 @@ class OBJECT_OT_link_avatar_wearables(bpy.types.Operator):
                         original_scales = {}
                         for obj in original_collection.objects:
                             original_scales[obj.name] = obj.scale.copy()
-                            print(f"Original scale for {obj.name}: {obj.scale}")
                         
                         # Store original parenting relationships
                         original_parents = {}
                         for obj in original_collection.objects:
                             if obj.parent:
                                 original_parents[obj.name] = obj.parent.name
-                                print(f"Original parent of {obj.name}: {obj.parent.name}")
                         
                         # NEW APPROACH: Process objects individually to avoid transform_apply on armatures
                         safe_deselect_all()
@@ -183,25 +181,16 @@ class OBJECT_OT_link_avatar_wearables(bpy.types.Operator):
                             if duplicated_obj.type == 'MESH' and duplicated_obj.data.materials:
                                 for slot in duplicated_obj.material_slots:
                                     if slot.material:
-                                        # Make material single-user
                                         slot.material.make_local()
-                                        print(f"Made material '{slot.material.name}' single-user for {duplicated_obj.name}")
                             
                             # Only apply transforms to MESH objects, skip ARMATURE
                             if duplicated_obj.type == 'MESH':
-                                print(f"Applying transforms to mesh: {duplicated_obj.name}")
                                 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-                            elif duplicated_obj.type == 'ARMATURE':
-                                print(f"SKIPPING armature: {duplicated_obj.name} - keeping original scale")
-                                # Do NOT apply transforms to armature - keep original scale
-                            else:
-                                print(f"Skipping {duplicated_obj.type}: {duplicated_obj.name}")
                             
                             # Deselect for next iteration
                             duplicated_obj.select_set(False)
                         
                         # Restore parenting relationships using proper Blender commands
-                        print("Restoring parenting relationships...")
                         for child_name, parent_name in original_parents.items():
                             if child_name in name_mapping and parent_name in name_mapping:
                                 child_obj = name_mapping[child_name]
@@ -209,8 +198,6 @@ class OBJECT_OT_link_avatar_wearables(bpy.types.Operator):
                                 
                                 # Use proper Blender parenting commands for armature deformation
                                 if parent_obj.type == 'ARMATURE' and child_obj.type == 'MESH':
-                                    print(f"Setting up armature deformation for {child_obj.name} -> {parent_obj.name}")
-                                    
                                     # Select the mesh object and set armature as active
                                     safe_deselect_all()
                                     child_obj.select_set(True)
@@ -221,14 +208,9 @@ class OBJECT_OT_link_avatar_wearables(bpy.types.Operator):
                                     
                                     # Then parent with armature deformation
                                     bpy.ops.object.parent_set(type='ARMATURE')
-                                    
-                                    print(f"Successfully set up armature deformation for {child_obj.name}")
                                 else:
                                     # For non-armature parenting, use direct assignment
                                     child_obj.parent = parent_obj
-                                    print(f"Set {child_obj.name} as child of {parent_obj.name}")
-                            else:
-                                print(f"Warning: Could not restore parent for {child_name} -> {parent_name}")
                         
                         # The built-in duplication should preserve all armature weighting and modifiers
                         # No need for complex manual copying
@@ -307,47 +289,26 @@ class OBJECT_OT_link_avatar_wearables(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self)
     
     def _extract_avatar_files(self, assets_dir, temp_dir):
-        """Extract avatar blend files from addon package to temp directory"""
+        """Extract avatar blend files from addon package to temp directory."""
         import shutil
-        
-        # List of avatar files to extract
+
         avatar_files = ["AvatarShape_A.blend", "AvatarShape_B.blend"]
-        
-        print(f"DEBUG: Assets directory: {assets_dir}")
-        print(f"DEBUG: Temp directory: {temp_dir}")
-        
-        # List directory contents for debugging
-        try:
-            print(f"DEBUG: Directory contents of {assets_dir}:")
-            for item in os.listdir(assets_dir):
-                print(f"  - {item}")
-        except Exception as e:
-            print(f"  Could not list directory: {str(e)}")
-        
+
         for avatar_file in avatar_files:
             source_path = os.path.join(assets_dir, avatar_file)
             dest_path = os.path.join(temp_dir, avatar_file)
-            
-            print(f"DEBUG: Looking for {avatar_file} at: {source_path}")
-            
-            # Check if file already exists in temp directory
+
             if os.path.exists(dest_path):
-                print(f"Avatar file already exists: {dest_path}")
                 continue
-            
-            # Check if source file exists in addon
+
             if os.path.exists(source_path):
                 try:
-                    # Copy file to temp directory
                     shutil.copy2(source_path, dest_path)
-                    print(f"✓ Extracted avatar file: {dest_path}")
                     self.report({'INFO'}, f"Extracted {avatar_file}")
                 except Exception as e:
-                    print(f"✗ Failed to extract {avatar_file}: {str(e)}")
                     self.report({'WARNING'}, f"Could not extract {avatar_file}: {str(e)}")
             else:
-                print(f"✗ Avatar file not found in addon: {source_path}")
                 self.report({'ERROR'}, f"Avatar file not found in addon: {avatar_file}")
                 return False
-        
+
         return True

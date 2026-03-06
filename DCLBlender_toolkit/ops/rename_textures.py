@@ -127,13 +127,6 @@ class OBJECT_OT_rename_textures(bpy.types.Operator):
                 material_name = texture_info['material_name']
                 new_name = self.rename_texture(texture_name, usage, material_name)
                 
-                # Debug info
-                print(f"Original: {texture_name}")
-                print(f"Material: {material_name}")
-                print(f"Usage: {usage}")
-                print(f"New name: {new_name}")
-                print("---")
-                
                 if new_name != texture_name:
                     # Check if new name already exists
                     if new_name not in bpy.data.images:

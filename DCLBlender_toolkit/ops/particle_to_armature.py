@@ -7,7 +7,6 @@ def create_bone(_ps_armature, _particle, _index):
         bpy.ops.object.mode_set(mode='EDIT')
 
     bone = _ps_armature.data.edit_bones.new('bone_' + str(_index))
-    print("bone name: ", bone.name)
     bone.head = _particle.location
     bone.tail = (_particle.location.x, _particle.location.y + 1 , _particle.location.z)
     
@@ -16,7 +15,6 @@ def set_keyframe_bone_particle(_ps_armature, _particle, _index):
         bpy.ops.object.mode_set(mode='POSE')
     
     pose_bone = _ps_armature.pose.bones[_index]
-    print(pose_bone.name)
     
     start_frame = bpy.context.scene.ps_converter_start_frame
     end_frame = bpy.context.scene.ps_converter_end_frame
@@ -47,7 +45,6 @@ def duplicate_n_attach_obj_to_bone(_ps_armature, _object_to_copy, _index):
         bpy.ops.object.mode_set(mode='OBJECT')
     bpy.context.scene.frame_set(1)
     
-    print('object name:', _object_to_copy.name)
     
     dupli_obj = bpy.data.objects.new(name='particle_'+str(_index), object_data=_object_to_copy.data.copy())
     #dupli = object_to_copy.copy()
@@ -135,8 +132,6 @@ class OBJECT_OT_particles_to_armature_converter(bpy.types.Operator):
             if obj_evaluated.particle_systems.active == None:
                 continue
             
-            print('----- evaluate object: ', obj.name, '-----')
-            
             for particle_system in obj_evaluated.particle_systems:
                 ps_settings = particle_system.settings
                 instance_object = ps_settings.instance_object
@@ -164,8 +159,6 @@ class OBJECT_OT_particles_to_armature_converter(bpy.types.Operator):
                         object_to_copy = instance_object
 
                     particle_object_list.append(object_to_copy)
-                    
-                    print(particle, object_to_copy)
         
         return particle_list, particle_object_list
 

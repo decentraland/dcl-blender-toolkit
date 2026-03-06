@@ -63,12 +63,13 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
 
     def count_current_usage(self):
         """Count current wearable usage"""
-        
+
         # Count triangles in selected objects
         triangle_count = 0
         for obj in bpy.context.selected_objects:
             if obj.type == 'MESH' and obj.data:
-                triangle_count += len(obj.data.polygons)
+                obj.data.calc_loop_triangles()
+                triangle_count += len(obj.data.loop_triangles)
         
         # Count materials used by selected objects
         materials_used = set()
@@ -139,10 +140,6 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
         
         if warnings:
             report_lines.extend(["", "⚠️  WARNINGS:"] + warnings)
-        
-        # Print to console
-        for line in report_lines:
-            print(line)
         
         # Show in Blender
         if warnings:

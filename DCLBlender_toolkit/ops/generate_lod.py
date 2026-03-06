@@ -193,10 +193,6 @@ class OBJECT_OT_generate_lod(bpy.types.Operator):
                 mod.use_collapse_triangulate = True
                 bpy.ops.object.modifier_apply(modifier=mod.name)
 
-                original_tris = len(src_obj.data.polygons)
-                new_tris = len(new_obj.data.polygons)
-                print(f"Created {lod_name}: {original_tris} -> {new_tris} faces ({ratio * 100:.0f}%)")
-
                 total_created += 1
 
         # Restore selection to source objects

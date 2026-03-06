@@ -1,6 +1,6 @@
 bl_info = {
     "name": "Decentraland Tools",
-    "author": "Your Name",
+    "author": "Decentraland Foundation",
     "version": (1, 2, 0),
     "blender": (2, 80, 0),
     "location": "3D Viewport > Sidebar (N) > Decentraland Tools",
@@ -31,6 +31,7 @@ from .ops.particle_to_armature import OBJECT_OT_particles_to_armature_converter
 from .ops.import_dcl_rig import OBJECT_OT_import_dcl_rig, OBJECT_OT_import_dcl_prop, OBJECT_OT_import_dcl_limit_area
 from .ops.validate_emote import OBJECT_OT_validate_emote
 from .ops.export_emote_glb import OBJECT_OT_export_emote_glb
+from .ops.emote_actions import OBJECT_OT_create_emote_action, OBJECT_OT_set_emote_boundary_keyframes
 from .ops.resize_textures import OBJECT_OT_resize_textures
 from .ops.apply_transforms import OBJECT_OT_apply_transforms
 from .ops.avatar_limitations import OBJECT_OT_avatar_limitations
@@ -136,6 +137,11 @@ class VIEW3D_PT_dcl_tools(bpy.types.Panel):
             _op(row, OBJECT_OT_import_dcl_limit_area.bl_idname, "Limit Area Reference", "DIMENSIONS", 'MESH_GRID')
             col.separator(factor=0.3)
 
+            row = col.row(align=True)
+            _op(row, OBJECT_OT_create_emote_action.bl_idname, "Create Emote Action", "EDIT", 'ACTION')
+            _op(row, OBJECT_OT_set_emote_boundary_keyframes.bl_idname, "Set Boundary Keys", "PROGRESS_CHECK", 'KEYTYPE_JITTER_VEC')
+            col.separator(factor=0.3)
+
             _op(col, OBJECT_OT_validate_emote.bl_idname, "Validate Emote", "PROGRESS_CHECK", 'CHECKMARK')
             col.separator(factor=0.3)
 
@@ -209,6 +215,7 @@ class VIEW3D_PT_dcl_tools(bpy.types.Panel):
             row = col.row(align=True)
             _op(row, OBJECT_OT_strip_materials_from_colliders.bl_idname, "Strip Materials", "SPHERE_OFF", 'MATERIAL')
             _op(row, OBJECT_OT_simplify_colliders.bl_idname, "Simplify", "POLYGON", 'MOD_DECIM')
+            _op(col, OBJECT_OT_cleanup_colliders.bl_idname, "Clean Up Colliders", "ERASER", 'BRUSH_DATA')
 
         # ================================================================
         # Export
@@ -264,6 +271,8 @@ classes = (
     OBJECT_OT_import_dcl_limit_area,
     OBJECT_OT_validate_emote,
     OBJECT_OT_export_emote_glb,
+    OBJECT_OT_create_emote_action,
+    OBJECT_OT_set_emote_boundary_keyframes,
     OBJECT_OT_create_parcels,
     OBJECT_OT_rename_textures,
     OBJECT_OT_resize_textures,

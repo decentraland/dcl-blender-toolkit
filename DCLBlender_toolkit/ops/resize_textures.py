@@ -32,7 +32,6 @@ class OBJECT_OT_resize_textures(bpy.types.Operator):
         default=True,
     )
 
-
     backup_original: bpy.props.BoolProperty(
         name="Backup Original",
         description="Keep backup of original textures",
@@ -50,36 +49,23 @@ class OBJECT_OT_resize_textures(bpy.types.Operator):
 
         # Determine which textures to process
         textures_to_process = []
-        
+
         if self.scope_all_textures:
-            # Get ALL images in the scene, including unlinked ones
-            all_images = list(bpy.data.images)
-            # Filter out render results and other non-texture images
-            for img in all_images:
+            for img in bpy.data.images:
                 if not img.name.startswith('Render Result') and not img.name.startswith('Viewer Node'):
                     textures_to_process.append(img)
-            print(f"Processing ALL textures: {len(textures_to_process)} found")
         elif self.scope_selected_objects and context.selected_objects:
-            # Get textures from selected objects
             for obj in context.selected_objects:
-                print(f"Checking object: {obj.name} (type: {obj.type})")
                 if obj.type == 'MESH' and obj.data.materials:
-                    print(f"  Object has {len(obj.data.materials)} materials")
                     for mat in obj.data.materials:
                         if mat and mat.use_nodes:
-                            print(f"  Checking material: {mat.name}")
                             for node in mat.node_tree.nodes:
                                 if node.type == 'TEX_IMAGE' and node.image:
-                                    print(f"    Found texture node: {node.name} -> {node.image.name}")
                                     if node.image not in textures_to_process:
                                         textures_to_process.append(node.image)
         else:
             self.report({'WARNING'}, "Please select objects or choose 'All Textures'")
             return {'CANCELLED'}
-
-        print(f"Total textures to process: {len(textures_to_process)}")
-        for img in textures_to_process:
-            print(f"  - {img.name} ({img.size[0]}x{img.size[1]})")
 
         if not textures_to_process:
             self.report({'WARNING'}, "No textures found to resize")
@@ -88,11 +74,8 @@ class OBJECT_OT_resize_textures(bpy.types.Operator):
         # Process each texture
         for image in textures_to_process:
             try:
-                print(f"Processing texture: {image.name}, current size: {image.size[0]}x{image.size[1]}")
-                
                 # Skip if already at target size or smaller
                 if image.size[0] <= target_size_int and image.size[1] <= target_size_int:
-                    print(f"Skipping {image.name} - already at target size or smaller")
                     skipped_count += 1
                     continue
 
@@ -103,124 +86,49 @@ class OBJECT_OT_resize_textures(bpy.types.Operator):
                         backup_image = bpy.data.images.new(backup_name, image.size[0], image.size[1])
                         backup_image.pixels[:] = image.pixels[:]
                         backup_image.filepath = image.filepath
-                        print(f"Created backup: {backup_name}")
 
-                # Store original properties
                 original_size = f"{image.size[0]}x{image.size[1]}"
                 original_name = image.name
                 original_filepath = image.filepath
-                
-                # DEBUG: Let's see what's actually happening
-                print(f"=== DEBUGGING {image.name} ===")
-                print(f"Original size: {image.size[0]}x{image.size[1]}")
-                print(f"Target size: {target_size_int}x{target_size_int}")
-                print(f"Image pixels length: {len(image.pixels)}")
-                print(f"Image has filepath: {bool(image.filepath)}")
-                print(f"Image is packed: {image.packed_file is not None}")
-                
-                # Try a different approach - use Blender's built-in resize
-                print(f"Attempting to resize {image.name}...")
-                
-                # Store original pixels
-                original_pixels = image.pixels[:]
-                print(f"Stored {len(original_pixels)} pixels")
-                
-                # Try to resize using Blender's method
-                try:
-                    # Force update before resize
-                    image.update()
-                    
-                    # Resize the image
-                    image.scale(target_size_int, target_size_int)
-                    
-                    # Force update after resize
-                    image.update()
-                    
-                    print(f"After resize: {image.size[0]}x{image.size[1]}")
-                    
-                    # Check if it actually worked
-                    if image.size[0] == target_size_int and image.size[1] == target_size_int:
-                        print(f"✓ Resize successful!")
-                        
-                        # Update name - insert size before extension
-                        name_base, name_ext = os.path.splitext(original_name)
-                        if name_ext.lower() in ('.png', '.jpg', '.jpeg', '.tga', '.bmp', '.tiff', '.exr', '.hdr'):
-                            image.name = f"{name_base}_{target_size_int}x{target_size_int}{name_ext}"
-                        else:
-                            image.name = f"{original_name}_{target_size_int}x{target_size_int}"
-                        
-                        # Save the resized image to disk using Blender's render system
-                        if original_filepath:
-                            filepath = bpy.path.abspath(original_filepath)
-                            if os.path.exists(filepath):
-                                name, ext = os.path.splitext(filepath)
-                                new_filepath = f"{name}_{target_size_int}x{target_size_int}{ext}"
-                                
-                                print(f"Attempting to save to: {new_filepath}")
-                                
-                                # Method 1: Try using Blender's save_render
-                                try:
-                                    image.save_render(new_filepath)
-                                    print(f"✓ Saved using save_render: {new_filepath}")
-                                except Exception as e:
-                                    print(f"save_render failed: {str(e)}")
-                                    
-                                    # Method 2: Try using file operations
-                                    try:
-                                        # Set the filepath and save
-                                        image.filepath = new_filepath
-                                        image.save()
-                                        print(f"✓ Saved using image.save(): {new_filepath}")
-                                    except Exception as e2:
-                                        print(f"image.save() failed: {str(e2)}")
-                                        
-                                        # Method 3: Try using bpy.ops.image.save_as
-                                        try:
-                                            # Select the image in the image editor
-                                            for area in bpy.context.screen.areas:
-                                                if area.type == 'IMAGE_EDITOR':
-                                                    area.spaces.active.image = image
-                                                    break
-                                            
-                                            # Save as new file
-                                            bpy.ops.image.save_as(filepath=new_filepath)
-                                            print(f"✓ Saved using save_as: {new_filepath}")
-                                        except Exception as e3:
-                                            print(f"save_as failed: {str(e3)}")
-                                
-                                # Verify the saved file
-                                if os.path.exists(new_filepath):
-                                    print(f"✓ File exists on disk: {new_filepath}")
-                                    # Check file size to verify it's not empty
-                                    file_size = os.path.getsize(new_filepath)
-                                    print(f"File size: {file_size} bytes")
-                                else:
-                                    print(f"✗ File not found on disk: {new_filepath}")
-                        else:
-                            print(f"No filepath for {image.name} - cannot save to disk")
-                        
-                        processed_count += 1
-                        resize_msg = f"Resized '{image.name}' from {original_size} to {target_size_int}x{target_size_int}"
-                        self.report({'INFO'}, resize_msg)
-                        print(f"✓ Successfully resized {original_name}")
+
+                image.update()
+                image.scale(target_size_int, target_size_int)
+                image.update()
+
+                if image.size[0] == target_size_int and image.size[1] == target_size_int:
+                    # Update name
+                    name_base, name_ext = os.path.splitext(original_name)
+                    if name_ext.lower() in ('.png', '.jpg', '.jpeg', '.tga', '.bmp', '.tiff', '.exr', '.hdr'):
+                        image.name = f"{name_base}_{target_size_int}x{target_size_int}{name_ext}"
                     else:
-                        print(f"✗ Resize failed - size is still {image.size[0]}x{image.size[1]}")
-                        self.report({'WARNING'}, f"Failed to resize '{image.name}' - size unchanged")
-                        
-                except Exception as resize_error:
-                    print(f"✗ Resize error: {str(resize_error)}")
-                    self.report({'ERROR'}, f"Resize failed for '{image.name}': {str(resize_error)}")
-                
-                print(f"=== END DEBUG {image.name} ===")
+                        image.name = f"{original_name}_{target_size_int}x{target_size_int}"
+
+                    # Save the resized image to disk
+                    if original_filepath:
+                        filepath = bpy.path.abspath(original_filepath)
+                        if os.path.exists(filepath):
+                            name, ext = os.path.splitext(filepath)
+                            new_filepath = f"{name}_{target_size_int}x{target_size_int}{ext}"
+
+                            try:
+                                image.save_render(new_filepath)
+                            except Exception:
+                                try:
+                                    image.filepath = new_filepath
+                                    image.save()
+                                except Exception:
+                                    pass
+
+                    processed_count += 1
+                    self.report({'INFO'}, f"Resized '{image.name}' from {original_size} to {target_size_int}x{target_size_int}")
+                else:
+                    self.report({'WARNING'}, f"Failed to resize '{image.name}' - size unchanged")
 
             except Exception as e:
-                print(f"Error processing {image.name}: {str(e)}")
                 self.report({'ERROR'}, f"Failed to resize '{image.name}': {str(e)}")
 
-        # Report results
         if processed_count > 0:
-            result_msg = f"Successfully resized {processed_count} texture(s) to {target_size_int}x{target_size_int}"
-            self.report({'INFO'}, result_msg)
+            self.report({'INFO'}, f"Successfully resized {processed_count} texture(s) to {target_size_int}x{target_size_int}")
         if skipped_count > 0:
             self.report({'INFO'}, f"Skipped {skipped_count} texture(s) (already at target size or smaller)")
 
@@ -228,25 +136,25 @@ class OBJECT_OT_resize_textures(bpy.types.Operator):
 
     def draw(self, context):
         layout = self.layout
-        
+
         col = layout.column()
         col.prop(self, "target_size", expand=True)
-        
+
         layout.separator()
         layout.prop(self, "scope_all_textures")
         layout.prop(self, "scope_selected_objects")
-        
+
         layout.separator()
         layout.prop(self, "backup_original")
-        
+
         layout.separator()
         layout.label(text="This will resize textures to reduce file size")
         layout.label(text="and optimize performance for Decentraland")
         layout.separator()
-        layout.label(text="💡 Tip: Use 'All Textures' if some textures", icon='INFO')
+        layout.label(text="Tip: Use 'All Textures' if some textures", icon='INFO')
         layout.label(text="are not being detected from selected objects")
         layout.separator()
-        layout.label(text="⚠️ Note: This modifies the actual image data", icon='ERROR')
+        layout.label(text="Note: This modifies the actual image data", icon='ERROR')
         layout.label(text="Use backup option to preserve originals")
 
     def invoke(self, context, event):
