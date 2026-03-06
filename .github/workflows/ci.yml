@@ -43,6 +43,9 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     needs: [check, test]
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+      artifact-name: ${{ steps.name.outputs.artifact-name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,12 +53,50 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set artifact name
+        id: name
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "artifact-name=decentraland-tools-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
       - name: Build
         run: make build
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
+        id: upload
         with:
-          name: decentraland-tools-dev
+          name: ${{ steps.name.outputs.artifact-name }}
           path: dist/*.zip
           retention-days: 7
+
+  notify:
+    name: PR Comment
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event.pull_request.number
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Find existing comment
+        uses: peter-evans/find-comment@v3
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: Test Decentraland Tools extension
+
+      - name: Create or update comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## Test Decentraland Tools extension
+
+            :arrow_down: **[Download `${{ needs.build.outputs.artifact-name }}.zip`](${{ needs.build.outputs.artifact-url }})**
+
+            **To install:** in Blender, go to **Edit > Preferences > Add-ons > Install...** (or **Get Extensions > Install from Disk** on 4.2+) and select the downloaded `.zip` file.
+
+            _Updated for commit ${{ github.event.pull_request.head.sha }}_
+          edit-mode: replace
