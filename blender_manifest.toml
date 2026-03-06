@@ -1,0 +1,23 @@
+schema_version = "1.0.0"
+
+id = "decentraland_tools"
+name = "Decentraland Tools"
+version = "1.2.0"
+tagline = "Tools for Decentraland asset creation and optimization"
+description = "Comprehensive toolkit for Decentraland scene, wearable, and emote creation. Provides tools for scene setup, material management, texture optimization, avatar development, emote pipeline, collider workflow, LOD generation, and glTF export with atlas optimization."
+maintainer = "Decentraland Foundation <hello@decentraland.org>"
+type = "add-on"
+
+# Blender Extensions Platform requires minimum 4.2.0
+# Legacy installs (2.80+) use bl_info in __init__.py instead
+blender_version_min = "4.2.0"
+
+license = ["SPDX:Apache-2.0"]
+website = "https://github.com/decentraland/dcl-blender-toolkit"
+
+# Category in Blender's Extensions browser
+tags = ["Object", "Import-Export", "3D View"]
+
+[permissions]
+files = "Import/export glTF files and Decentraland assets"
+network = "Open Decentraland documentation URLs in browser"

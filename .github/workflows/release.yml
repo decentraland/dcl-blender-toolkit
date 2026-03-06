@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-release:
+    name: Build & Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup
+        run: make setup
+
+      - name: Check
+        run: make check
+
+      - name: Test
+        run: make test
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Strip 'v' prefix if present (e.g. v1.3.0 -> 1.3.0)
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Invalid version format '$VERSION'. Expected X.Y.Z"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION"
+
+      - name: Build
+        run: make build VERSION=${{ steps.version.outputs.version }}
+
+      - name: Verify build artifact
+        run: |
+          ZIP="dist/decentraland_tools-${{ steps.version.outputs.version }}.zip"
+          if [ ! -f "$ZIP" ]; then
+            echo "ERROR: Expected build artifact not found: $ZIP"
+            exit 1
+          fi
+          echo "Artifact ready: $ZIP ($(du -h "$ZIP" | cut -f1))"
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            dist/decentraland_tools-${{ steps.version.outputs.version }}.zip \
+            --clobber
