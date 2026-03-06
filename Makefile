@@ -1,7 +1,7 @@
 .PHONY: setup lint format check test build clean
 
 setup:
-	pip install -e ".[dev]"
+	pip install ruff pytest
 
 lint:
 	ruff check src/ tests/ scripts/

@@ -175,7 +175,7 @@ Before starting, ensure you have the following installed:
    make setup
    ```
 
-   This installs `ruff` (linter/formatter) and `pytest` (test framework) from `pyproject.toml`.
+   This installs `ruff` (linter/formatter) and `pytest` (test framework).
 
 3. **Verify everything works:**
 
@@ -246,7 +246,7 @@ dcl-blender-toolkit/
 │   ├── ci.yml                    # PR workflow: lint, test, build
 │   └── release.yml               # Release workflow: build + publish
 ├── blender_manifest.toml         # Blender Extensions Platform manifest (4.2+)
-├── pyproject.toml                # Project config, dev dependencies, ruff settings
+├── pyproject.toml                # Ruff linting/formatting config
 ├── Makefile                      # Dev task runner
 └── LICENSE                       # Apache 2.0
 ```
