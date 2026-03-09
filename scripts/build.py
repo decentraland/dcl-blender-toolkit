@@ -124,6 +124,12 @@ def build_zip(version_str):
         # Add blender_manifest.toml at package root
         zf.write(MANIFEST_FILE, os.path.join(PACKAGE_NAME, "blender_manifest.toml"))
 
+        # Add license files
+        for license_file in ("LICENSE", "LICENSE-GPL", "LICENSE-APACHE"):
+            license_path = os.path.join(ROOT_DIR, license_file)
+            if os.path.isfile(license_path):
+                zf.write(license_path, os.path.join(PACKAGE_NAME, license_file))
+
     file_size = os.path.getsize(zip_path)
     size_mb = file_size / (1024 * 1024)
     print(f"Built {zip_path} ({size_mb:.2f} MB)")

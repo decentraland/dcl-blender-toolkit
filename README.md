@@ -1,6 +1,6 @@
 # Decentraland Tools
 
-[![CI Status](https://github.com/decentraland/dcl-blender-toolkit/workflows/CI/badge.svg)](https://github.com/decentraland/dcl-blender-toolkit/actions/workflows/ci.yml) [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE) [![Blender](https://img.shields.io/badge/Blender-2.80--5.0+-orange.svg)](https://www.blender.org/) [![Made for Decentraland](https://img.shields.io/badge/Made%20for-Decentraland-ff0099.svg)](https://decentraland.org/)
+[![CI Status](https://github.com/decentraland/dcl-blender-toolkit/workflows/CI/badge.svg)](https://github.com/decentraland/dcl-blender-toolkit/actions/workflows/ci.yml) [![License: GPL-3.0 / Apache-2.0](https://img.shields.io/badge/License-GPL--3.0%20%2F%20Apache--2.0-blue.svg)](LICENSE) [![Blender](https://img.shields.io/badge/Blender-2.80--5.0+-orange.svg)](https://www.blender.org/) [![Made for Decentraland](https://img.shields.io/badge/Made%20for-Decentraland-ff0099.svg)](https://decentraland.org/)
 
 A comprehensive Blender extension for Decentraland scene, wearable, and emote creation. Provides tools for scene setup, material management, texture optimization, avatar development, emote pipeline, collider workflow, LOD generation, and glTF export with atlas optimization.
 
@@ -389,7 +389,7 @@ The CI pipeline will automatically lint, test, and build your changes.
 
 ## License
 
-[Apache 2.0](LICENSE) - Decentraland Foundation
+Dual-licensed under [GPL-3.0-or-later](LICENSE-GPL) and [Apache-2.0](LICENSE-APACHE) at your option. The GPL-3.0 license applies when distributed through the Blender Extensions Platform. See [LICENSE](LICENSE) for details.
 
 ---
 

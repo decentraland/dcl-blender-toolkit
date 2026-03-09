@@ -12,7 +12,7 @@ type = "add-on"
 # Legacy installs (2.80+) use bl_info in __init__.py instead
 blender_version_min = "4.2.0"
 
-license = ["SPDX:Apache-2.0"]
+license = ["SPDX:GPL-3.0-or-later"]
 website = "https://github.com/decentraland/dcl-blender-toolkit"
 
 # Category in Blender's Extensions browser
