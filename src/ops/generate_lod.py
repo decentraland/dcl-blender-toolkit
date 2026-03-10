@@ -5,11 +5,11 @@ from .. import icon_loader
 
 def draw_lod_panel(layout, context):
     """Draw the full LOD Generator panel section with visual LOD indicators."""
-    scene = context.scene
-    levels = scene.dcl_lod_levels
+    props = context.scene.dcl_tools
+    levels = props.lod_levels
 
     # Level count control
-    layout.prop(scene, "dcl_lod_levels")
+    layout.prop(props, "lod_levels")
     layout.separator()
 
     # ---- LOD level rows with visual factor sliders ----
@@ -25,13 +25,13 @@ def draw_lod_panel(layout, context):
 
     # LOD 1-4 — editable FACTOR sliders that double as visual bars
     if levels >= 1:
-        col.prop(scene, "dcl_lod1_ratio", text="LOD 1", slider=True)
+        col.prop(props, "lod1_ratio", text="LOD 1", slider=True)
     if levels >= 2:
-        col.prop(scene, "dcl_lod2_ratio", text="LOD 2", slider=True)
+        col.prop(props, "lod2_ratio", text="LOD 2", slider=True)
     if levels >= 3:
-        col.prop(scene, "dcl_lod3_ratio", text="LOD 3", slider=True)
+        col.prop(props, "lod3_ratio", text="LOD 3", slider=True)
     if levels >= 4:
-        col.prop(scene, "dcl_lod4_ratio", text="LOD 4", slider=True)
+        col.prop(props, "lod4_ratio", text="LOD 4", slider=True)
 
     # Culled indicator
     row = col.row(align=True)
@@ -41,7 +41,7 @@ def draw_lod_panel(layout, context):
     layout.separator()
 
     # Options
-    layout.prop(scene, "dcl_lod_create_collection")
+    layout.prop(props, "lod_create_collection")
 
     # Generate button
     layout.separator()
@@ -61,12 +61,12 @@ def draw_lod_panel(layout, context):
             icon="MOD_DECIM",
         )
     # Pass panel settings to the operator
-    op.lod_levels = scene.dcl_lod_levels
-    op.lod1_ratio = scene.dcl_lod1_ratio
-    op.lod2_ratio = scene.dcl_lod2_ratio
-    op.lod3_ratio = scene.dcl_lod3_ratio
-    op.lod4_ratio = scene.dcl_lod4_ratio
-    op.create_collection = scene.dcl_lod_create_collection
+    op.lod_levels = props.lod_levels
+    op.lod1_ratio = props.lod1_ratio
+    op.lod2_ratio = props.lod2_ratio
+    op.lod3_ratio = props.lod3_ratio
+    op.lod4_ratio = props.lod4_ratio
+    op.create_collection = props.lod_create_collection
     op.skip_dialog = True
 
     # Selection info

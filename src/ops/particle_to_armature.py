@@ -16,8 +16,8 @@ def set_keyframe_bone_particle(_ps_armature, _particle, _index):
 
     pose_bone = _ps_armature.pose.bones[_index]
 
-    start_frame = bpy.context.scene.ps_converter_start_frame
-    end_frame = bpy.context.scene.ps_converter_end_frame
+    start_frame = bpy.context.scene.dcl_tools.ps_converter_start_frame
+    end_frame = bpy.context.scene.dcl_tools.ps_converter_end_frame
     SAMPLING = 1
 
     for frame in range(start_frame, end_frame + 1):
@@ -49,7 +49,7 @@ def duplicate_n_attach_obj_to_bone(_ps_armature, _object_to_copy, _index):
 
     dupli_obj = bpy.data.objects.new(name="particle_" + str(_index), object_data=_object_to_copy.data.copy())
     # dupli = object_to_copy.copy()
-    bpy.data.collections[bpy.context.scene.ps_converter_out_collection].objects.link(dupli_obj)
+    bpy.data.collections[bpy.context.scene.dcl_tools.ps_converter_out_collection].objects.link(dupli_obj)
     dupli_obj.location = _ps_armature.data.bones[_index].head
 
     vertex_group = dupli_obj.vertex_groups.new(name="bone_" + str(_index))
@@ -87,9 +87,9 @@ class OBJECT_OT_particles_to_armature_converter(bpy.types.Operator):
             return
 
         # setup collection
-        coll_name = bpy.data.collections.get(context.scene.ps_converter_out_collection)
+        coll_name = bpy.data.collections.get(context.scene.dcl_tools.ps_converter_out_collection)
         if coll_name is None:
-            out_collection = bpy.data.collections.new(name=context.scene.ps_converter_out_collection)
+            out_collection = bpy.data.collections.new(name=context.scene.dcl_tools.ps_converter_out_collection)
             context.scene.collection.children.link(out_collection)
 
         # setup armature
@@ -97,7 +97,7 @@ class OBJECT_OT_particles_to_armature_converter(bpy.types.Operator):
         PS_ARMATURE_OBJS = bpy.data.objects.new("armature_ps", armature_data)
         PS_ARMATURE_OBJS.location = (0, 0, 0)
         bpy.data.armatures[armature_data.name].display_type = "STICK"
-        bpy.data.collections[context.scene.ps_converter_out_collection].objects.link(PS_ARMATURE_OBJS)
+        bpy.data.collections[context.scene.dcl_tools.ps_converter_out_collection].objects.link(PS_ARMATURE_OBJS)
 
         context.view_layer.objects.active = PS_ARMATURE_OBJS
 
@@ -172,9 +172,10 @@ class OBJECT_OT_particles_to_armature_converter(bpy.types.Operator):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(context.scene, "ps_converter_out_collection")
-        layout.prop(context.scene, "ps_converter_start_frame")
-        layout.prop(context.scene, "ps_converter_end_frame")
+        props = context.scene.dcl_tools
+        layout.prop(props, "ps_converter_out_collection")
+        layout.prop(props, "ps_converter_start_frame")
+        layout.prop(props, "ps_converter_end_frame")
         layout.separator()
         layout.label(text="Select objects with particle systems to convert")
         layout.label(text="Creates armature with animated bones for each particle")

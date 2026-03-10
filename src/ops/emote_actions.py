@@ -74,8 +74,8 @@ class OBJECT_OT_set_emote_boundary_keyframes(bpy.types.Operator):
             self.report({"ERROR"}, "No active action found on the target armature.")
             return {"CANCELLED"}
 
-        start_frame = int(context.scene.dcl_emote_start_frame)
-        end_frame = int(context.scene.dcl_emote_end_frame)
+        start_frame = int(context.scene.dcl_tools.emote_start_frame)
+        end_frame = int(context.scene.dcl_tools.emote_end_frame)
         if end_frame <= start_frame:
             self.report({"ERROR"}, "End frame must be greater than start frame.")
             return {"CANCELLED"}

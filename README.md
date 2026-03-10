@@ -92,7 +92,6 @@ The panel is organized into collapsible sections in the **3D Viewport Sidebar (N
 | Tool | Description |
 |------|-------------|
 | **Replace Materials** | Replace one or more materials with another across the scene |
-| **Clean Unused Materials** | Remove unused material slots and/or globally orphan materials |
 | **Resize Textures** | Batch resize textures to target resolutions (64-1024px) with optional backup |
 | **Validate Textures** | Check all textures for glTF/DCL compatibility (power-of-two, size, format) |
 | **Enable Backface Culling** | Enable backface culling on all materials in the scene |
@@ -103,21 +102,12 @@ The panel is organized into collapsible sections in the **3D Viewport Sidebar (N
 |------|-------------|
 | **Generate LODs** | Create Level of Detail copies using decimation (1-4 levels with configurable ratios) |
 
-### Viewer
-
-| Tool | Description |
-|------|-------------|
-| **Toggle Display Mode** | Switch viewport display between Bounds, Wire, Textured, and Solid |
-
 ### CleanUp
 
 | Tool | Description |
 |------|-------------|
 | **Remove Empty Objects** | Remove empty objects, meshes with no geometry, or meshes without materials |
-| **Apply Transforms** | Apply location, rotation, and scale transforms to selected or all objects |
-| **Rename Mesh Data** | Sync mesh data block names with their parent object names |
 | **Rename Textures** | Auto-rename textures based on PBR node usage (baseColor, hrm, normal, emissive) |
-| **Batch Rename** | Rename multiple selected objects with prefix, suffix, or find & replace |
 
 ### Collider Management
 

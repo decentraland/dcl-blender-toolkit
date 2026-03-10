@@ -113,9 +113,11 @@ def build_zip(version_str):
                 )
                 zf.write(filepath, arcname)
 
-        # Add assets
+        # Add assets (skip Blender backup files)
         if os.path.isdir(ASSETS_DIR):
             for filename in os.listdir(ASSETS_DIR):
+                if filename.endswith(".blend1"):
+                    continue
                 filepath = os.path.join(ASSETS_DIR, filename)
                 if os.path.isfile(filepath):
                     arcname = os.path.join(PACKAGE_NAME, "assets", filename)

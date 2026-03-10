@@ -24,7 +24,7 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
         if validation["errors"]:
             self.report({"ERROR"}, "Cannot export: emote validation has blocking errors.")
             return {"CANCELLED"}
-        if validation["warnings"] and context.scene.dcl_emote_strict_validation:
+        if validation["warnings"] and context.scene.dcl_tools.emote_strict_validation:
             self.report({"ERROR"}, "Strict mode enabled: resolve validation warnings before export.")
             return {"CANCELLED"}
 
@@ -43,9 +43,9 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
 
-        start_frame = int(context.scene.dcl_emote_start_frame)
-        end_frame = int(context.scene.dcl_emote_end_frame)
-        frame_step = int(context.scene.dcl_emote_sampling_rate)
+        start_frame = int(context.scene.dcl_tools.emote_start_frame)
+        end_frame = int(context.scene.dcl_tools.emote_end_frame)
+        frame_step = int(context.scene.dcl_tools.emote_sampling_rate)
 
         visibility_cache = {}
         selection_cache = list(context.selected_objects)
