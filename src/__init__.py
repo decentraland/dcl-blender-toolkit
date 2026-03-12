@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Decentraland Tools",
     "author": "Decentraland Foundation",
-    "version": (1, 2, 0),
+    "version": (1, 2, 2),
     "blender": (2, 80, 0),
     "location": "3D Viewport > Sidebar (N) > Decentraland Tools",
     "description": "Collection of tools for Decentraland asset creation and optimization (Blender 2.80 - 5.0+)",
@@ -80,8 +80,8 @@ class DCLToolsSceneProperties(bpy.types.PropertyGroup):
     )
     emote_sampling_rate: bpy.props.IntProperty(
         name="Sampling Rate",
-        description="Export bake step. 2 is recommended, 3 for extra size reduction",
-        default=2,
+        description="Export bake step. 1 = full fidelity, 2 recommended, 3 for extra size reduction",
+        default=1,
         min=1,
         max=6,
     )

@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "decentraland_tools"
 name = "Decentraland Tools"
-version = "1.2.0"
+version = "1.2.2"
 tagline = "Tools for Decentraland asset creation and optimization"
 description = "Comprehensive toolkit for Decentraland scene, wearable, and emote creation. Provides tools for scene setup, material management, texture optimization, avatar development, emote pipeline, collider workflow, LOD generation, and glTF export with atlas optimization."
 maintainer = "Decentraland Foundation <hello@decentraland.org>"
