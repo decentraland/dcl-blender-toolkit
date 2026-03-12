@@ -52,6 +52,7 @@ ICONS = {
     # Export
     "BULB": "bulb.png",  # Export Lights
     "PACKAGE_EXPORT": "package-export.png",  # Export glTF
+    "REFRESH": "refresh.png",  # Update All Exported Objects
     # Avatars
     "FRIENDS": "friends.png",  # Avatar Shapes
     "SHIRT_SPORT": "shirt-sport.png",  # Wearable Limits

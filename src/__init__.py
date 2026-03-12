@@ -24,7 +24,7 @@ from .ops.generate_lod import OBJECT_OT_generate_lod, draw_lod_panel
 from .ops.import_dcl_rig import OBJECT_OT_import_dcl_limit_area, OBJECT_OT_import_dcl_prop, OBJECT_OT_import_dcl_rig
 from .ops.link_avatar_wearables import OBJECT_OT_link_avatar_wearables
 from .ops.particle_to_armature import OBJECT_OT_particles_to_armature_converter
-from .ops.quick_export_gltf import OBJECT_OT_quick_export_gltf
+from .ops.quick_export_gltf import OBJECT_OT_export_scene, OBJECT_OT_quick_export_gltf, OBJECT_OT_update_all_exported
 from .ops.remove_empty_objects import OBJECT_OT_remove_empty_objects
 from .ops.remove_uvs import OBJECT_OT_remove_uvs_from_colliders
 from .ops.rename_add_suffix import OBJECT_OT_rename_add_collider_suffix
@@ -43,6 +43,11 @@ from .ops.validate_emote import OBJECT_OT_validate_emote
 from .ops.validate_scene import OBJECT_OT_validate_scene
 from .ops.validate_textures import OBJECT_OT_validate_textures
 
+# Tab constants
+TAB_ALL = "ALL"
+TAB_SCENES = "SCENES"
+TAB_WEARABLES = "WEARABLES"
+
 # ---------------------------------------------------------------------------
 # PropertyGroup: all Scene-level properties in one group
 # ---------------------------------------------------------------------------
@@ -50,6 +55,24 @@ from .ops.validate_textures import OBJECT_OT_validate_textures
 
 class DCLToolsSceneProperties(bpy.types.PropertyGroup):
     """All Decentraland Tools scene-level properties."""
+
+    # Tab selection
+    active_tab: bpy.props.EnumProperty(
+        name="Tab",
+        items=[
+            (TAB_ALL, "All Tools", "Show all tools"),
+            (TAB_SCENES, "Scenes", "Show scene tools"),
+            (TAB_WEARABLES, "Wearables", "Show wearable and emote tools"),
+        ],
+        default=TAB_ALL,
+    )
+
+    # Experimental features toggle
+    show_experimental: bpy.props.BoolProperty(
+        name="Experimental Features",
+        description="Show experimental features",
+        default=False,
+    )
 
     # Panel expansion states
     scene_expanded: bpy.props.BoolProperty(default=True)
@@ -61,7 +84,6 @@ class DCLToolsSceneProperties(bpy.types.PropertyGroup):
     manage_expanded: bpy.props.BoolProperty(default=True)
     lod_expanded: bpy.props.BoolProperty(default=True)
     docs_expanded: bpy.props.BoolProperty(default=True)
-    experimental_expanded: bpy.props.BoolProperty(default=False)
 
     # Emote workflow
     emote_start_frame: bpy.props.IntProperty(
@@ -152,7 +174,7 @@ class DCLToolsSceneProperties(bpy.types.PropertyGroup):
 
 
 # ---------------------------------------------------------------------------
-# Helper: draw a collapsible section header
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -181,6 +203,146 @@ def _op(target, bl_idname, text, icon_name, fallback_icon):
 
 
 # ---------------------------------------------------------------------------
+# Section drawing functions
+# ---------------------------------------------------------------------------
+
+
+def _draw_scene_creation(layout, props):
+    box, expanded = _section_header(layout, props, "scene_expanded", "Scene Creation")
+    if expanded:
+        col = box.column(align=True)
+        col.scale_y = 1.2
+        _op(col, OBJECT_OT_create_parcels.bl_idname, "Create Parcels", "GRID_DOTS", "MESH_PLANE")
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_scene_limitations.bl_idname, "Scene Limitations", "RULER", "INFO")
+        _op(row, OBJECT_OT_validate_scene.bl_idname, "Scene Validator", "SHIELD_CHECK", "SEQUENCE")
+
+
+def _draw_avatars(layout, props):
+    box, expanded = _section_header(layout, props, "avatars_expanded", "Avatars")
+    if expanded:
+        col = box.column(align=True)
+        col.scale_y = 1.2
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_link_avatar_wearables.bl_idname, "Avatar Shapes", "FRIENDS", "ARMATURE_DATA")
+        _op(row, OBJECT_OT_avatar_limitations.bl_idname, "Wearable Limits", "SHIRT_SPORT", "INFO")
+
+
+def _draw_emotes(layout, props):
+    box, expanded = _section_header(layout, props, "emotes_expanded", "Emotes")
+    if expanded:
+        col = box.column(align=True)
+        col.scale_y = 1.2
+
+        _op(col, OBJECT_OT_import_dcl_rig.bl_idname, "Import DCL Rig", "ASSET", "ARMATURE_DATA")
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_import_dcl_prop.bl_idname, "Add Prop", "EMOTE_PROPS", "OBJECT_DATA")
+        _op(row, OBJECT_OT_import_dcl_limit_area.bl_idname, "Limit Area Reference", "DIMENSIONS", "MESH_GRID")
+        col.separator(factor=0.3)
+
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_create_emote_action.bl_idname, "Create Emote Action", "EDIT", "ACTION")
+        _op(
+            row,
+            OBJECT_OT_set_emote_boundary_keyframes.bl_idname,
+            "Set Boundary Keys",
+            "PROGRESS_CHECK",
+            "KEYTYPE_JITTER_VEC",
+        )
+        col.separator(factor=0.3)
+
+        _op(col, OBJECT_OT_validate_emote.bl_idname, "Validate Emote", "PROGRESS_CHECK", "CHECKMARK")
+        col.separator(factor=0.3)
+
+        settings = col.box()
+        settings.label(text="Emote Settings")
+        settings.prop(props, "emote_start_frame")
+        settings.prop(props, "emote_end_frame")
+        settings.prop(props, "emote_sampling_rate")
+        settings.prop(props, "emote_strict_validation")
+
+
+def _draw_materials(layout, props):
+    box, expanded = _section_header(layout, props, "materials_expanded", "Materials & Textures")
+    if expanded:
+        col = box.column(align=True)
+        col.scale_y = 1.2
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_replace_materials.bl_idname, "Replace Materials", "REPLACE", "MATERIAL_DATA")
+        _op(row, OBJECT_OT_resize_textures.bl_idname, "Resize Textures", "IMAGE_IN_PICTURE", "IMAGE_DATA")
+        col.separator(factor=0.3)
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_validate_textures.bl_idname, "Validate Textures", "PHOTO_CHECK", "TEXTURE")
+        _op(
+            row,
+            OBJECT_OT_enable_backface_culling.bl_idname,
+            "Enable Backface Culling",
+            "FLIP_VERTICAL",
+            "NORMALS_FACE",
+        )
+
+
+def _draw_lod(layout, props, context):
+    box, expanded = _section_header(layout, props, "lod_expanded", "LOD Generator")
+    if expanded:
+        draw_lod_panel(box, context)
+
+
+def _draw_cleanup(layout, props):
+    box, expanded = _section_header(layout, props, "cleanup_expanded", "CleanUp")
+    if expanded:
+        col = box.column(align=True)
+        col.scale_y = 1.2
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_remove_empty_objects.bl_idname, "Remove Empty Objects", "TRASH_X", "X")
+        _op(row, OBJECT_OT_rename_textures.bl_idname, "Rename Textures", "PHOTO_EDIT", "TEXTURE")
+
+
+def _draw_colliders(layout, props):
+    box, expanded = _section_header(layout, props, "manage_expanded", "Collider Management")
+    if expanded:
+        col = box.column(align=True)
+        col.scale_y = 1.2
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_rename_add_collider_suffix.bl_idname, "Add Suffix", "TAG", "OUTLINER_OB_MESH")
+        _op(row, OBJECT_OT_remove_uvs_from_colliders.bl_idname, "Remove UVs", "MAP_OFF", "UV")
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_strip_materials_from_colliders.bl_idname, "Strip Materials", "SPHERE_OFF", "MATERIAL")
+        _op(row, OBJECT_OT_simplify_colliders.bl_idname, "Simplify", "POLYGON", "MOD_DECIM")
+        _op(col, OBJECT_OT_cleanup_colliders.bl_idname, "Clean Up Colliders", "ERASER", "BRUSH_DATA")
+
+
+def _draw_export(layout, props):
+    box, expanded = _section_header(layout, props, "export_expanded", "Export")
+    if expanded:
+        col = box.column(align=True)
+        col.scale_y = 1.2
+        _op(col, OBJECT_OT_export_scene.bl_idname, "Export Scene", "DCL_LOGO", "SCENE_DATA")
+        _op(col, OBJECT_OT_update_all_exported.bl_idname, "Update All Exported Objects", "REFRESH", "FILE_REFRESH")
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_quick_export_gltf.bl_idname, "Export glTF", "PACKAGE_EXPORT", "EXPORT")
+        _op(row, OBJECT_OT_export_emote_glb.bl_idname, "Export Emote G...", "EMOTE_EXPORT", "EXPORT")
+
+
+def _draw_docs(layout, props):
+    box, expanded = _section_header(layout, props, "docs_expanded", "Help")
+    if expanded:
+        col = box.column(align=True)
+        col.scale_y = 1.2
+        _op(col, OBJECT_OT_open_documentation.bl_idname, "Creator Docs", "BOOK", "HELP")
+        _op(col, OBJECT_OT_scene_limits_guide.bl_idname, "Limits Guide", "BOOK_2", "INFO")
+        _op(col, OBJECT_OT_asset_guidelines.bl_idname, "Assets Guide", "FILE_DESC", "FILE_TEXT")
+
+
+def _draw_experimental(layout, props):
+    col = layout.column(align=True)
+    col.scale_y = 1.2
+    row = col.row(align=True)
+    _op(row, OBJECT_OT_export_lights.bl_idname, "Export Lights", "BULB", "LIGHT_DATA")
+    _op(row, OBJECT_OT_particles_to_armature_converter.bl_idname, "Particle to Armature", "BONE", "PARTICLES")
+
+
+# ---------------------------------------------------------------------------
 # Panel
 # ---------------------------------------------------------------------------
 
@@ -195,160 +357,50 @@ class VIEW3D_PT_dcl_tools(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.dcl_tools
+        tab = props.active_tab
 
-        # ---- Header ----
-        header = layout.row(align=True)
-        dcl_icon = icon_loader.get_icon("DCL_LOGO")
-        if dcl_icon:
-            header.label(text="  Decentraland Tools", icon_value=dcl_icon)
-        else:
-            header.label(text="  Decentraland Tools", icon="TOOL_SETTINGS")
+        # ---- Tab bar ----
+        row = layout.row(align=True)
+        row.prop(props, "active_tab", expand=True)
 
-        # ================================================================
-        # Scene Creation
-        # ================================================================
-        box, expanded = _section_header(layout, props, "scene_expanded", "Scene Creation")
-        if expanded:
-            col = box.column(align=True)
-            col.scale_y = 1.2
-            _op(col, OBJECT_OT_create_parcels.bl_idname, "Create Parcels", "GRID_DOTS", "MESH_PLANE")
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_scene_limitations.bl_idname, "Scene Limitations", "RULER", "INFO")
-            _op(row, OBJECT_OT_validate_scene.bl_idname, "Scene Validator", "SHIELD_CHECK", "SEQUENCE")
+        # ---- Experimental toggle ----
+        layout.prop(props, "show_experimental")
 
-        # ================================================================
-        # Avatars
-        # ================================================================
-        box, expanded = _section_header(layout, props, "avatars_expanded", "Avatars")
-        if expanded:
-            col = box.column(align=True)
-            col.scale_y = 1.2
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_link_avatar_wearables.bl_idname, "Avatar Shapes", "FRIENDS", "ARMATURE_DATA")
-            _op(row, OBJECT_OT_avatar_limitations.bl_idname, "Wearable Limits", "SHIRT_SPORT", "INFO")
+        layout.separator(factor=0.5)
 
-        # ================================================================
-        # Emotes
-        # ================================================================
-        box, expanded = _section_header(layout, props, "emotes_expanded", "Emotes")
-        if expanded:
-            col = box.column(align=True)
-            col.scale_y = 1.2
+        # ---- Tab content ----
+        if tab == TAB_ALL:
+            _draw_scene_creation(layout, props)
+            _draw_avatars(layout, props)
+            _draw_emotes(layout, props)
+            _draw_materials(layout, props)
+            _draw_lod(layout, props, context)
+            _draw_cleanup(layout, props)
+            _draw_colliders(layout, props)
+            _draw_export(layout, props)
+            _draw_docs(layout, props)
+            if props.show_experimental:
+                _draw_experimental(layout, props)
 
-            _op(col, OBJECT_OT_import_dcl_rig.bl_idname, "Import DCL Rig", "ASSET", "ARMATURE_DATA")
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_import_dcl_prop.bl_idname, "Add Prop", "EMOTE_PROPS", "OBJECT_DATA")
-            _op(row, OBJECT_OT_import_dcl_limit_area.bl_idname, "Limit Area Reference", "DIMENSIONS", "MESH_GRID")
-            col.separator(factor=0.3)
+        elif tab == TAB_SCENES:
+            _draw_scene_creation(layout, props)
+            _draw_materials(layout, props)
+            _draw_lod(layout, props, context)
+            _draw_cleanup(layout, props)
+            _draw_colliders(layout, props)
+            _draw_export(layout, props)
+            _draw_docs(layout, props)
+            if props.show_experimental:
+                _draw_experimental(layout, props)
 
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_create_emote_action.bl_idname, "Create Emote Action", "EDIT", "ACTION")
-            _op(
-                row,
-                OBJECT_OT_set_emote_boundary_keyframes.bl_idname,
-                "Set Boundary Keys",
-                "PROGRESS_CHECK",
-                "KEYTYPE_JITTER_VEC",
-            )
-            col.separator(factor=0.3)
-
-            _op(col, OBJECT_OT_validate_emote.bl_idname, "Validate Emote", "PROGRESS_CHECK", "CHECKMARK")
-            col.separator(factor=0.3)
-
-            settings = col.box()
-            settings.label(text="Emote Settings")
-            settings.prop(props, "emote_start_frame")
-            settings.prop(props, "emote_end_frame")
-            settings.prop(props, "emote_sampling_rate")
-            settings.prop(props, "emote_strict_validation")
-
-        # ================================================================
-        # Materials & Textures
-        # ================================================================
-        box, expanded = _section_header(layout, props, "materials_expanded", "Materials & Textures")
-        if expanded:
-            col = box.column(align=True)
-            col.scale_y = 1.2
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_replace_materials.bl_idname, "Replace Materials", "REPLACE", "MATERIAL_DATA")
-            _op(row, OBJECT_OT_resize_textures.bl_idname, "Resize Textures", "IMAGE_IN_PICTURE", "IMAGE_DATA")
-            col.separator(factor=0.3)
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_validate_textures.bl_idname, "Validate Textures", "PHOTO_CHECK", "TEXTURE")
-            _op(
-                row,
-                OBJECT_OT_enable_backface_culling.bl_idname,
-                "Enable Backface Culling",
-                "FLIP_VERTICAL",
-                "NORMALS_FACE",
-            )
-
-        # ================================================================
-        # LOD Generator
-        # ================================================================
-        box, expanded = _section_header(layout, props, "lod_expanded", "LOD Generator")
-        if expanded:
-            draw_lod_panel(box, context)
-
-        # ================================================================
-        # CleanUp
-        # ================================================================
-        box, expanded = _section_header(layout, props, "cleanup_expanded", "CleanUp")
-        if expanded:
-            col = box.column(align=True)
-            col.scale_y = 1.2
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_remove_empty_objects.bl_idname, "Remove Empty Objects", "TRASH_X", "X")
-            _op(row, OBJECT_OT_rename_textures.bl_idname, "Rename Textures", "PHOTO_EDIT", "TEXTURE")
-
-        # ================================================================
-        # Collider Management
-        # ================================================================
-        box, expanded = _section_header(layout, props, "manage_expanded", "Collider Management")
-        if expanded:
-            col = box.column(align=True)
-            col.scale_y = 1.2
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_rename_add_collider_suffix.bl_idname, "Add Suffix", "TAG", "OUTLINER_OB_MESH")
-            _op(row, OBJECT_OT_remove_uvs_from_colliders.bl_idname, "Remove UVs", "MAP_OFF", "UV")
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_strip_materials_from_colliders.bl_idname, "Strip Materials", "SPHERE_OFF", "MATERIAL")
-            _op(row, OBJECT_OT_simplify_colliders.bl_idname, "Simplify", "POLYGON", "MOD_DECIM")
-            _op(col, OBJECT_OT_cleanup_colliders.bl_idname, "Clean Up Colliders", "ERASER", "BRUSH_DATA")
-
-        # ================================================================
-        # Export
-        # ================================================================
-        box, expanded = _section_header(layout, props, "export_expanded", "Export")
-        if expanded:
-            col = box.column(align=True)
-            col.scale_y = 1.2
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_quick_export_gltf.bl_idname, "Export glTF", "PACKAGE_EXPORT", "EXPORT")
-            _op(row, OBJECT_OT_export_emote_glb.bl_idname, "Export Emote GLB", "EMOTE_EXPORT", "EXPORT")
-
-        # ================================================================
-        # Documentation
-        # ================================================================
-        box, expanded = _section_header(layout, props, "docs_expanded", "Documentation")
-        if expanded:
-            col = box.column(align=True)
-            col.scale_y = 1.3
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_open_documentation.bl_idname, "Documentation", "BOOK", "HELP")
-            _op(row, OBJECT_OT_scene_limits_guide.bl_idname, "Limits Guide", "BOOK_2", "INFO")
-            _op(row, OBJECT_OT_asset_guidelines.bl_idname, "Asset Guide", "FILE_DESC", "FILE_TEXT")
-
-        # ================================================================
-        # Experimental
-        # ================================================================
-        box, expanded = _section_header(layout, props, "experimental_expanded", "Experimental")
-        if expanded:
-            col = box.column(align=True)
-            col.scale_y = 1.2
-            row = col.row(align=True)
-            _op(row, OBJECT_OT_export_lights.bl_idname, "Export Lights", "BULB", "LIGHT_DATA")
-            _op(row, OBJECT_OT_particles_to_armature_converter.bl_idname, "Particle to Armature", "BONE", "PARTICLES")
+        elif tab == TAB_WEARABLES:
+            _draw_avatars(layout, props)
+            _draw_emotes(layout, props)
+            _draw_materials(layout, props)
+            _draw_export(layout, props)
+            _draw_docs(layout, props)
+            if props.show_experimental:
+                _draw_experimental(layout, props)
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +439,8 @@ classes = (
     OBJECT_OT_validate_scene,
     OBJECT_OT_generate_lod,
     OBJECT_OT_quick_export_gltf,
+    OBJECT_OT_export_scene,
+    OBJECT_OT_update_all_exported,
     OBJECT_OT_open_documentation,
     OBJECT_OT_scene_limits_guide,
     OBJECT_OT_asset_guidelines,

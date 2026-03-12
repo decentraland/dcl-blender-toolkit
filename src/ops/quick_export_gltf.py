@@ -423,3 +423,29 @@ class OBJECT_OT_quick_export_gltf(bpy.types.Operator):
             if not self.export_path:
                 self.export_path = os.path.join(os.path.dirname(bpy.data.filepath), "export") + os.sep
         return context.window_manager.invoke_props_dialog(self, width=500)
+
+
+class OBJECT_OT_export_scene(bpy.types.Operator):
+    """Export entire Decentraland scene as glTF/GLB"""
+
+    bl_idname = "object.export_dcl_scene"
+    bl_label = "Export Scene"
+    bl_description = "Export the full scene as a glTF/GLB file with Decentraland-optimized settings"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        bpy.ops.object.quick_export_gltf("INVOKE_DEFAULT", export_selected=False)
+        return {"FINISHED"}
+
+
+class OBJECT_OT_update_all_exported(bpy.types.Operator):
+    """Re-export all objects using the last export settings"""
+
+    bl_idname = "object.update_all_exported"
+    bl_label = "Update All Exported Objects"
+    bl_description = "Re-export all scene objects using previous export settings"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        bpy.ops.object.quick_export_gltf("EXEC_DEFAULT", export_selected=False)
+        return {"FINISHED"}
