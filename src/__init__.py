@@ -17,6 +17,7 @@ from .ops.cleanup_colliders import OBJECT_OT_cleanup_colliders
 from .ops.create_parcels import OBJECT_OT_create_parcels
 from .ops.documentation import OBJECT_OT_asset_guidelines, OBJECT_OT_open_documentation, OBJECT_OT_scene_limits_guide
 from .ops.emote_actions import OBJECT_OT_create_emote_action, OBJECT_OT_set_emote_boundary_keyframes
+from .ops.compress_textures import OBJECT_OT_compress_textures
 from .ops.enable_backface_culling import OBJECT_OT_enable_backface_culling
 from .ops.export_emote_glb import OBJECT_OT_export_emote_glb
 from .ops.export_lights import OBJECT_OT_export_lights
@@ -26,6 +27,7 @@ from .ops.link_avatar_wearables import OBJECT_OT_link_avatar_wearables
 from .ops.particle_to_armature import OBJECT_OT_particles_to_armature_converter
 from .ops.quick_export_gltf import OBJECT_OT_export_scene, OBJECT_OT_quick_export_gltf, OBJECT_OT_update_all_exported
 from .ops.remove_empty_objects import OBJECT_OT_remove_empty_objects
+from .ops.remove_specular import OBJECT_OT_remove_specular
 from .ops.remove_uvs import OBJECT_OT_remove_uvs_from_colliders
 from .ops.rename_add_suffix import OBJECT_OT_rename_add_collider_suffix
 from .ops.rename_textures import OBJECT_OT_rename_textures
@@ -279,6 +281,10 @@ def _draw_materials(layout, props):
             "FLIP_VERTICAL",
             "NORMALS_FACE",
         )
+        col.separator(factor=0.3)
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_remove_specular.bl_idname, "Remove Specular", "SPHERE_OFF", "SHADING_RENDERED")
+        _op(row, OBJECT_OT_compress_textures.bl_idname, "Compress Images", "PACKAGE_EXPORT", "IMAGE_DATA")
 
 
 def _draw_lod(layout, props, context):
@@ -438,6 +444,8 @@ classes = (
     OBJECT_OT_create_parcels,
     OBJECT_OT_rename_textures,
     OBJECT_OT_resize_textures,
+    OBJECT_OT_compress_textures,
+    OBJECT_OT_remove_specular,
     OBJECT_OT_enable_backface_culling,
     OBJECT_OT_link_avatar_wearables,
     OBJECT_OT_particles_to_armature_converter,
