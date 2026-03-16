@@ -70,20 +70,19 @@ class DCLToolsSceneProperties(bpy.types.PropertyGroup):
     # Experimental features toggle
     show_experimental: bpy.props.BoolProperty(
         name="Experimental Features",
-        description="Show experimental features",
+        description="Show experimental features (LOD Generator, Other)",
         default=False,
     )
 
     # Panel expansion states
     scene_expanded: bpy.props.BoolProperty(default=True)
-    export_expanded: bpy.props.BoolProperty(default=True)
     avatars_expanded: bpy.props.BoolProperty(default=True)
     emotes_expanded: bpy.props.BoolProperty(default=True)
     materials_expanded: bpy.props.BoolProperty(default=True)
     cleanup_expanded: bpy.props.BoolProperty(default=True)
     manage_expanded: bpy.props.BoolProperty(default=True)
     lod_expanded: bpy.props.BoolProperty(default=True)
-    docs_expanded: bpy.props.BoolProperty(default=True)
+    other_expanded: bpy.props.BoolProperty(default=True)
 
     # Emote workflow
     emote_start_frame: bpy.props.IntProperty(
@@ -312,34 +311,14 @@ def _draw_colliders(layout, props):
         _op(col, OBJECT_OT_cleanup_colliders.bl_idname, "Clean Up Colliders", "ERASER", "BRUSH_DATA")
 
 
-def _draw_export(layout, props):
-    box, expanded = _section_header(layout, props, "export_expanded", "Export")
+def _draw_other(layout, props):
+    box, expanded = _section_header(layout, props, "other_expanded", "Other")
     if expanded:
         col = box.column(align=True)
         col.scale_y = 1.2
-        _op(col, OBJECT_OT_export_scene.bl_idname, "Export Scene", "DCL_LOGO", "SCENE_DATA")
-        _op(col, OBJECT_OT_update_all_exported.bl_idname, "Update All Exported Objects", "REFRESH", "FILE_REFRESH")
         row = col.row(align=True)
-        _op(row, OBJECT_OT_quick_export_gltf.bl_idname, "Export glTF", "PACKAGE_EXPORT", "EXPORT")
-        _op(row, OBJECT_OT_export_emote_glb.bl_idname, "Export Emote G...", "EMOTE_EXPORT", "EXPORT")
-
-
-def _draw_docs(layout, props):
-    box, expanded = _section_header(layout, props, "docs_expanded", "Help")
-    if expanded:
-        col = box.column(align=True)
-        col.scale_y = 1.2
-        _op(col, OBJECT_OT_open_documentation.bl_idname, "Creator Docs", "BOOK", "HELP")
-        _op(col, OBJECT_OT_scene_limits_guide.bl_idname, "Limits Guide", "BOOK_2", "INFO")
-        _op(col, OBJECT_OT_asset_guidelines.bl_idname, "Assets Guide", "FILE_DESC", "FILE_TEXT")
-
-
-def _draw_experimental(layout, props):
-    col = layout.column(align=True)
-    col.scale_y = 1.2
-    row = col.row(align=True)
-    _op(row, OBJECT_OT_export_lights.bl_idname, "Export Lights", "BULB", "LIGHT_DATA")
-    _op(row, OBJECT_OT_particles_to_armature_converter.bl_idname, "Particle to Armature", "BONE", "PARTICLES")
+        _op(row, OBJECT_OT_export_lights.bl_idname, "Export Lights", "BULB", "LIGHT_DATA")
+        _op(row, OBJECT_OT_particles_to_armature_converter.bl_idname, "Particle2Armat...", "BONE", "PARTICLES")
 
 
 # ---------------------------------------------------------------------------
@@ -374,33 +353,65 @@ class VIEW3D_PT_dcl_tools(bpy.types.Panel):
             _draw_avatars(layout, props)
             _draw_emotes(layout, props)
             _draw_materials(layout, props)
-            _draw_lod(layout, props, context)
+            if props.show_experimental:
+                _draw_lod(layout, props, context)
             _draw_cleanup(layout, props)
             _draw_colliders(layout, props)
-            _draw_export(layout, props)
-            _draw_docs(layout, props)
             if props.show_experimental:
-                _draw_experimental(layout, props)
+                _draw_other(layout, props)
 
         elif tab == TAB_SCENES:
             _draw_scene_creation(layout, props)
             _draw_materials(layout, props)
-            _draw_lod(layout, props, context)
+            if props.show_experimental:
+                _draw_lod(layout, props, context)
             _draw_cleanup(layout, props)
             _draw_colliders(layout, props)
-            _draw_export(layout, props)
-            _draw_docs(layout, props)
             if props.show_experimental:
-                _draw_experimental(layout, props)
+                _draw_other(layout, props)
 
         elif tab == TAB_WEARABLES:
             _draw_avatars(layout, props)
             _draw_emotes(layout, props)
             _draw_materials(layout, props)
-            _draw_export(layout, props)
-            _draw_docs(layout, props)
             if props.show_experimental:
-                _draw_experimental(layout, props)
+                _draw_other(layout, props)
+
+
+class VIEW3D_PT_dcl_export(bpy.types.Panel):
+    bl_label = "Export"
+    bl_idname = "VIEW3D_PT_dcl_export"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Decentraland Tools"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        col.scale_y = 1.2
+        _op(col, OBJECT_OT_export_scene.bl_idname, "Export Scene", "DCL_LOGO", "SCENE_DATA")
+        _op(col, OBJECT_OT_update_all_exported.bl_idname, "Update All Exported Objects", "REFRESH", "FILE_REFRESH")
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_quick_export_gltf.bl_idname, "Export glTF", "PACKAGE_EXPORT", "EXPORT")
+        _op(row, OBJECT_OT_export_emote_glb.bl_idname, "Export Emote G...", "EMOTE_EXPORT", "EXPORT")
+
+
+class VIEW3D_PT_dcl_help(bpy.types.Panel):
+    bl_label = "Help"
+    bl_idname = "VIEW3D_PT_dcl_help"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Decentraland Tools"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        col.scale_y = 1.2
+        _op(col, OBJECT_OT_open_documentation.bl_idname, "Creator Docs", "BOOK", "HELP")
+        _op(col, OBJECT_OT_scene_limits_guide.bl_idname, "Limits Guide", "BOOK_2", "INFO")
+        _op(col, OBJECT_OT_asset_guidelines.bl_idname, "Assets Guide", "FILE_DESC", "FILE_TEXT")
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +456,8 @@ classes = (
     OBJECT_OT_scene_limits_guide,
     OBJECT_OT_asset_guidelines,
     VIEW3D_PT_dcl_tools,
+    VIEW3D_PT_dcl_export,
+    VIEW3D_PT_dcl_help,
 )
 
 
