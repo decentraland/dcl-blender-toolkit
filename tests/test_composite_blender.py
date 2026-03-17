@@ -12,6 +12,7 @@ import json
 import math
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -482,6 +483,78 @@ try:
         check("scene.json has 'scene.base'", scene.get("scene", {}).get("base") == "0,0")
     finally:
         shutil.rmtree(format_test_dir, ignore_errors=True)
+
+    # ---------------------------------------------------------------------------
+    # Test 6: DCL SDK build validation (Blender → Inspector round-trip)
+    # ---------------------------------------------------------------------------
+
+    print("\n=== Test 6: DCL SDK Build Validation ===")
+
+    # Check if npx is available
+    npx_available = shutil.which("npx") is not None
+    if not npx_available:
+        print("  SKIP: npx not available, cannot test SDK build")
+    else:
+        sdk_test_dir = tempfile.mkdtemp(prefix="dcl_sdk_test_")
+        try:
+            # Initialize a DCL scene project
+            init_result = subprocess.run(
+                ["npx", "@dcl/sdk-commands", "init", "--yes"],
+                cwd=sdk_test_dir,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            check(
+                "SDK init succeeds",
+                init_result.returncode == 0,
+                init_result.stderr[-200:] if init_result.stderr else "",
+            )
+
+            if init_result.returncode == 0:
+                # Export Blender composite into the SDK project
+                bpy.ops.wm.read_factory_settings(use_empty=True)
+                bpy.ops.preferences.addon_enable(module="decentraland_tools")
+
+                bpy.ops.mesh.primitive_cube_add(location=(8.0, 0.0, 1.0))
+                bpy.context.active_object.name = "SDKTestCube"
+                bpy.ops.mesh.primitive_uv_sphere_add(location=(12.0, 0.0, 3.0))
+                bpy.context.active_object.name = "SDKTestSphere"
+                bpy.context.view_layer.update()
+
+                bpy.ops.object.export_composite(
+                    scene_dir=sdk_test_dir + os.sep,
+                    scene_title="SDK Build Test",
+                    export_hidden=False,
+                    overwrite_scene_json=False,
+                )
+
+                # Verify our composite landed
+                comp_path = os.path.join(sdk_test_dir, "assets", "scene", "main.composite")
+                check("composite exists in SDK project", os.path.isfile(comp_path))
+
+                # SDK build parses our composite with Composite.fromJson()
+                build_result = subprocess.run(
+                    ["npx", "@dcl/sdk-commands", "build"],
+                    cwd=sdk_test_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                check(
+                    "SDK build succeeds with our composite",
+                    build_result.returncode == 0,
+                    build_result.stderr[-300:] if build_result.stderr else build_result.stdout[-300:],
+                )
+                bin_index = os.path.join(sdk_test_dir, "bin", "index.js")
+                check("build output bin/index.js exists", os.path.isfile(bin_index))
+
+        except subprocess.TimeoutExpired:
+            check("SDK commands completed within timeout", False, "timed out")
+        except Exception as exc:
+            check("SDK test ran without exception", False, str(exc))
+        finally:
+            shutil.rmtree(sdk_test_dir, ignore_errors=True)
 
 finally:
     shutil.rmtree(export_dir, ignore_errors=True)
