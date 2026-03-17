@@ -112,6 +112,12 @@ _NAME_SCHEMA = {
 }
 
 
+MANAGED_COMPONENTS = {"core::Transform", "core::GltfContainer", "core-schema::Name"}
+
+# Custom property key used to store the DCL entity ID on Blender objects
+ENTITY_ID_PROP = "dcl_entity_id"
+
+
 def build_composite(entities_data):
     """Build a complete composite dict from a list of entity dicts.
 
@@ -150,4 +156,72 @@ def build_composite(entities_data):
                 "data": name_data,
             },
         ],
+    }
+
+
+def merge_composite(existing, entities_data):
+    """Merge updated entity data into an existing composite, preserving unknown components.
+
+    *existing* is the full composite dict loaded from disk.
+    *entities_data* is the same format as ``build_composite`` accepts.
+
+    Returns a new composite dict where:
+      - ``core::Transform``, ``core::GltfContainer``, ``core-schema::Name`` are
+        updated for entities in *entities_data*
+      - All other components (scripts, pointer events, etc.) are kept as-is
+      - Entities not in *entities_data* are kept unchanged in all components
+    """
+    # Build lookup of new entity data keyed by entity ID string
+    new_transform = {}
+    new_gltf = {}
+    new_name = {}
+    for ent in entities_data:
+        eid = str(ent["entity_id"])
+        new_transform[eid] = {"json": ent["transform"]}
+        new_gltf[eid] = {"json": {"src": ent["gltf_src"]}}
+        new_name[eid] = {"json": {"value": ent["name"]}}
+
+    new_managed = {
+        "core::Transform": (_TRANSFORM_SCHEMA, new_transform),
+        "core::GltfContainer": (_GLTF_CONTAINER_SCHEMA, new_gltf),
+        "core-schema::Name": (_NAME_SCHEMA, new_name),
+    }
+
+    result_components = []
+    seen_managed = set()
+
+    for comp in existing.get("components", []):
+        cname = comp["name"]
+        if cname in MANAGED_COMPONENTS:
+            # Merge: start from existing data, overlay with new
+            seen_managed.add(cname)
+            schema, new_data = new_managed[cname]
+            merged_data = dict(comp.get("data", {}))
+            merged_data.update(new_data)
+            result_components.append(
+                {
+                    "name": cname,
+                    "jsonSchema": schema,
+                    "data": merged_data,
+                }
+            )
+        else:
+            # Preserve unknown components untouched
+            result_components.append(comp)
+
+    # Add any managed components that weren't in the existing composite
+    for cname in ("core::Transform", "core::GltfContainer", "core-schema::Name"):
+        if cname not in seen_managed:
+            schema, new_data = new_managed[cname]
+            result_components.append(
+                {
+                    "name": cname,
+                    "jsonSchema": schema,
+                    "data": new_data,
+                }
+            )
+
+    return {
+        "version": existing.get("version", COMPOSITE_VERSION),
+        "components": result_components,
     }

@@ -6,11 +6,13 @@ import os
 import bpy
 
 from .composite_utils import (
+    ENTITY_ID_PROP,
     FIRST_ENTITY_ID,
     blender_pos_to_dcl,
     blender_quat_to_dcl,
     blender_scale_to_dcl,
     build_composite,
+    merge_composite,
     sanitize_filename,
 )
 
@@ -104,6 +106,32 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
         used.add(candidate)
         return candidate + ".glb"
 
+    def _build_entity_map(self, objects):
+        """Build ``{obj.name: entity_id}`` reusing stored IDs when available."""
+        entity_map = {}
+        used_ids = set()
+
+        # First pass: collect objects that already have an entity ID
+        for obj in objects:
+            stored = obj.get(ENTITY_ID_PROP)
+            if stored is not None:
+                eid = int(stored)
+                entity_map[obj.name] = eid
+                used_ids.add(eid)
+
+        # Second pass: assign new IDs to objects without one
+        next_id = FIRST_ENTITY_ID
+        for obj in objects:
+            if obj.name in entity_map:
+                continue
+            while next_id in used_ids:
+                next_id += 1
+            entity_map[obj.name] = next_id
+            used_ids.add(next_id)
+            next_id += 1
+
+        return entity_map
+
     def execute(self, context):
         scene_dir = self._resolve_scene_dir()
         models_dir = os.path.join(scene_dir, "assets", "models")
@@ -116,10 +144,18 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
             self.report({"WARNING"}, "No mesh objects to export.")
             return {"CANCELLED"}
 
-        # Build entity ID map (sorted order → deterministic IDs)
-        entity_map = {}
-        for idx, obj in enumerate(objects):
-            entity_map[obj.name] = FIRST_ENTITY_ID + idx
+        # Build entity ID map, reusing stored IDs from prior imports
+        entity_map = self._build_entity_map(objects)
+
+        # Load existing composite for merging (preserves unknown components)
+        composite_path = os.path.join(composite_dir, "main.composite")
+        existing_composite = None
+        if os.path.isfile(composite_path):
+            try:
+                with open(composite_path) as f:
+                    existing_composite = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                existing_composite = None
 
         used_filenames = set()
         entities_data = []
@@ -160,9 +196,14 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
                 }
             )
 
-        # Write main.composite
-        composite = build_composite(entities_data)
-        composite_path = os.path.join(composite_dir, "main.composite")
+            # Store entity ID on the Blender object for future re-exports
+            obj[ENTITY_ID_PROP] = eid
+
+        # Write main.composite — merge if existing, build fresh otherwise
+        if existing_composite:
+            composite = merge_composite(existing_composite, entities_data)
+        else:
+            composite = build_composite(entities_data)
         with open(composite_path, "w") as f:
             json.dump(composite, f, indent=2)
 

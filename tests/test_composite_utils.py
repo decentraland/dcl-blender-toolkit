@@ -16,6 +16,7 @@ from ops.composite_utils import (
     dcl_pos_to_blender,
     dcl_quat_to_blender,
     dcl_scale_to_blender,
+    merge_composite,
     sanitize_filename,
 )
 
@@ -198,3 +199,174 @@ class TestBuildComposite:
     def test_constants(self):
         assert FIRST_ENTITY_ID == 512
         assert COMPOSITE_VERSION == 1
+
+
+class TestMergeComposite:
+    def _make_entity(self, eid, name="E", pos_x=0):
+        return {
+            "entity_id": eid,
+            "transform": {
+                "position": {"x": pos_x, "y": 0, "z": 0},
+                "rotation": {"x": 0, "y": 0, "z": 0, "w": 1},
+                "scale": {"x": 1, "y": 1, "z": 1},
+                "parent": 0,
+            },
+            "gltf_src": f"assets/models/{name}.glb",
+            "name": name,
+        }
+
+    def test_preserves_unknown_components(self):
+        existing = {
+            "version": 1,
+            "components": [
+                {
+                    "name": "core::Transform",
+                    "jsonSchema": {},
+                    "data": {"512": {"json": {"position": {"x": 0, "y": 0, "z": 0}}}},
+                },
+                {
+                    "name": "core::GltfContainer",
+                    "jsonSchema": {},
+                    "data": {"512": {"json": {"src": "old.glb"}}},
+                },
+                {
+                    "name": "core-schema::Name",
+                    "jsonSchema": {},
+                    "data": {"512": {"json": {"value": "Old"}}},
+                },
+                {
+                    "name": "core::PointerEvents",
+                    "jsonSchema": {"type": "object"},
+                    "data": {"512": {"json": {"pointerEvents": [{"eventType": 1}]}}},
+                },
+                {
+                    "name": "asset-packs::ScriptComponent",
+                    "jsonSchema": {"type": "object"},
+                    "data": {"512": {"json": {"src": "some-script.ts"}}},
+                },
+            ],
+        }
+        updated = [self._make_entity(512, "Updated", pos_x=99)]
+        result = merge_composite(existing, updated)
+
+        comp_names = [c["name"] for c in result["components"]]
+        assert "core::PointerEvents" in comp_names
+        assert "asset-packs::ScriptComponent" in comp_names
+
+        # Verify unknown component data is untouched
+        pointer_comp = next(c for c in result["components"] if c["name"] == "core::PointerEvents")
+        assert pointer_comp["data"]["512"]["json"]["pointerEvents"] == [{"eventType": 1}]
+
+        script_comp = next(c for c in result["components"] if c["name"] == "asset-packs::ScriptComponent")
+        assert script_comp["data"]["512"]["json"]["src"] == "some-script.ts"
+
+    def test_updates_managed_components(self):
+        existing = {
+            "version": 1,
+            "components": [
+                {
+                    "name": "core::Transform",
+                    "jsonSchema": {},
+                    "data": {"512": {"json": {"position": {"x": 0, "y": 0, "z": 0}}}},
+                },
+                {
+                    "name": "core::GltfContainer",
+                    "jsonSchema": {},
+                    "data": {"512": {"json": {"src": "old.glb"}}},
+                },
+                {
+                    "name": "core-schema::Name",
+                    "jsonSchema": {},
+                    "data": {"512": {"json": {"value": "Old"}}},
+                },
+            ],
+        }
+        updated = [self._make_entity(512, "New", pos_x=42)]
+        result = merge_composite(existing, updated)
+
+        transform = next(c for c in result["components"] if c["name"] == "core::Transform")
+        assert transform["data"]["512"]["json"]["position"]["x"] == 42
+
+        gltf = next(c for c in result["components"] if c["name"] == "core::GltfContainer")
+        assert gltf["data"]["512"]["json"]["src"] == "assets/models/New.glb"
+
+        name = next(c for c in result["components"] if c["name"] == "core-schema::Name")
+        assert name["data"]["512"]["json"]["value"] == "New"
+
+    def test_preserves_entities_not_in_blender(self):
+        """Entities that exist in the composite but not in Blender should be kept."""
+        existing = {
+            "version": 1,
+            "components": [
+                {
+                    "name": "core::Transform",
+                    "jsonSchema": {},
+                    "data": {
+                        "512": {"json": {"position": {"x": 1, "y": 0, "z": 0}}},
+                        "513": {"json": {"position": {"x": 2, "y": 0, "z": 0}}},
+                    },
+                },
+                {
+                    "name": "core::GltfContainer",
+                    "jsonSchema": {},
+                    "data": {
+                        "512": {"json": {"src": "a.glb"}},
+                        "513": {"json": {"src": "b.glb"}},
+                    },
+                },
+                {
+                    "name": "core-schema::Name",
+                    "jsonSchema": {},
+                    "data": {
+                        "512": {"json": {"value": "A"}},
+                        "513": {"json": {"value": "B"}},
+                    },
+                },
+            ],
+        }
+        # Only update entity 512, leave 513 alone
+        updated = [self._make_entity(512, "A_Updated", pos_x=99)]
+        result = merge_composite(existing, updated)
+
+        transform = next(c for c in result["components"] if c["name"] == "core::Transform")
+        # Entity 512 updated
+        assert transform["data"]["512"]["json"]["position"]["x"] == 99
+        # Entity 513 preserved
+        assert transform["data"]["513"]["json"]["position"]["x"] == 2
+
+    def test_adds_new_entity_to_existing(self):
+        existing = {
+            "version": 1,
+            "components": [
+                {
+                    "name": "core::Transform",
+                    "jsonSchema": {},
+                    "data": {"512": {"json": {"position": {"x": 0, "y": 0, "z": 0}}}},
+                },
+                {
+                    "name": "core::GltfContainer",
+                    "jsonSchema": {},
+                    "data": {"512": {"json": {"src": "a.glb"}}},
+                },
+                {
+                    "name": "core-schema::Name",
+                    "jsonSchema": {},
+                    "data": {"512": {"json": {"value": "A"}}},
+                },
+            ],
+        }
+        updated = [
+            self._make_entity(512, "A"),
+            self._make_entity(513, "B", pos_x=5),
+        ]
+        result = merge_composite(existing, updated)
+
+        transform = next(c for c in result["components"] if c["name"] == "core::Transform")
+        assert "512" in transform["data"]
+        assert "513" in transform["data"]
+        assert transform["data"]["513"]["json"]["position"]["x"] == 5
+
+    def test_preserves_version(self):
+        existing = {"version": 1, "components": []}
+        result = merge_composite(existing, [self._make_entity(512, "X")])
+        assert result["version"] == 1

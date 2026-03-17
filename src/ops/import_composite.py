@@ -8,6 +8,7 @@ from mathutils import Matrix, Quaternion, Vector
 
 from .composite_utils import (
     COMPOSITE_VERSION,
+    ENTITY_ID_PROP,
     dcl_pos_to_blender,
     dcl_quat_to_blender,
     dcl_scale_to_blender,
@@ -133,6 +134,7 @@ class OBJECT_OT_import_composite(bpy.types.Operator):
 
             if existing:
                 self._apply_transform(existing, transform)
+                existing[ENTITY_ID_PROP] = eid
                 imported[eid] = existing
                 count += 1
             else:
@@ -161,6 +163,7 @@ class OBJECT_OT_import_composite(bpy.types.Operator):
                     root = next(iter(new_objs))
 
                 root.name = name
+                root[ENTITY_ID_PROP] = eid
                 self._apply_transform(root, transform)
                 imported[eid] = root
                 count += 1
