@@ -12,6 +12,7 @@ A comprehensive Blender extension for Decentraland scene, wearable, and emote cr
   - [Avatars](#avatars)
   - [Emotes](#emotes)
   - [Materials & Textures](#materials--textures)
+  - [Generate Thumbnail](#generate-thumbnail)
   - [LOD Generator](#lod-generator)
   - [Viewer](#viewer)
   - [CleanUp](#cleanup)
@@ -97,6 +98,17 @@ The panel is organized into collapsible sections in the **3D Viewport Sidebar (N
 | **Enable Backface Culling** | Enable backface culling on all materials in the scene |
 | **Remove Specular** | Remove specular tint textures and set specular values to 0 on Principled BSDF materials to reduce file size |
 | **Compress Images** | Compress textures to JPEG or PNG with configurable quality. Auto mode uses JPEG for opaque images and PNG for transparent, with an option to force JPEG when no alpha is present |
+
+### Generate Thumbnail
+
+| Tool | Description |
+|------|-------------|
+| **Add Camera** | Add a camera aimed at the active object for thumbnail shots |
+| **Camera Controls** | Adjust zoom, side, height, and angle for the thumbnail camera |
+| **Add Lighting** | Add thumbnail lighting around the active object with simple controls |
+| **Transparent Background** | Render the thumbnail with or without a transparent background |
+| **Output Size** | Choose a preset thumbnail size or set a custom width and height |
+| **Render Image** | Render and save a PNG thumbnail using Eevee or Cycles |
 
 ### LOD Generator
 
