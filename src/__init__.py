@@ -21,6 +21,15 @@ from .ops.enable_backface_culling import OBJECT_OT_enable_backface_culling
 from .ops.export_composite import OBJECT_OT_export_composite
 from .ops.export_emote_glb import OBJECT_OT_export_emote_glb
 from .ops.export_lights import OBJECT_OT_export_lights
+from .ops.generate_thumbnail import (
+    OBJECT_OT_add_thumbnail_camera,
+    OBJECT_OT_add_thumbnail_lighting,
+    OBJECT_OT_render_thumbnail,
+    _on_thumbnail_camera_property_update,
+    _on_thumbnail_lighting_property_update,
+    _on_thumbnail_resolution_update,
+    _on_thumbnail_transparent_background_update,
+)
 from .ops.generate_lod import OBJECT_OT_generate_lod, draw_lod_panel
 from .ops.import_composite import OBJECT_OT_import_composite
 from .ops.import_dcl_rig import OBJECT_OT_import_dcl_limit_area, OBJECT_OT_import_dcl_prop, OBJECT_OT_import_dcl_rig
@@ -83,6 +92,7 @@ class DCLToolsSceneProperties(bpy.types.PropertyGroup):
     materials_expanded: bpy.props.BoolProperty(default=True)
     cleanup_expanded: bpy.props.BoolProperty(default=True)
     manage_expanded: bpy.props.BoolProperty(default=True)
+    thumbnail_expanded: bpy.props.BoolProperty(default=True)
     lod_expanded: bpy.props.BoolProperty(default=True)
     other_expanded: bpy.props.BoolProperty(default=True)
 
@@ -171,6 +181,128 @@ class DCLToolsSceneProperties(bpy.types.PropertyGroup):
     )
     ps_converter_end_frame: bpy.props.IntProperty(
         name="End Frame", description="End frame for animation conversion", default=250, min=1
+    )
+
+    # Thumbnail generation
+    thumbnail_camera_name: bpy.props.StringProperty(default="")
+    thumbnail_target_name: bpy.props.StringProperty(default="")
+    thumbnail_camera_controls_expanded: bpy.props.BoolProperty(default=False)
+    thumbnail_lighting_controls_expanded: bpy.props.BoolProperty(default=False)
+    thumbnail_camera_base_distance: bpy.props.FloatProperty(default=2.5, min=0.2)
+    thumbnail_camera_zoom: bpy.props.FloatProperty(
+        name="Zoom",
+        description="Zoom camera in/out (lower = closer)",
+        default=1.0,
+        min=0.05,
+        max=4.0,
+        update=_on_thumbnail_camera_property_update,
+    )
+    thumbnail_camera_side: bpy.props.FloatProperty(
+        name="Side",
+        description="Move camera left or right",
+        default=0.0,
+        min=-20.0,
+        max=20.0,
+        update=_on_thumbnail_camera_property_update,
+    )
+    thumbnail_camera_up: bpy.props.FloatProperty(
+        name="Up/Down",
+        description="Move camera up or down",
+        default=0.0,
+        min=-20.0,
+        max=20.0,
+        update=_on_thumbnail_camera_property_update,
+    )
+    thumbnail_camera_rotate: bpy.props.FloatProperty(
+        name="Rotate",
+        description="Orbit camera around the active target in degrees",
+        default=35.0,
+        min=-180.0,
+        max=180.0,
+        update=_on_thumbnail_camera_property_update,
+    )
+
+    thumbnail_light_count: bpy.props.IntProperty(
+        name="Lights",
+        description="Number of thumbnail lights",
+        default=3,
+        min=1,
+        max=8,
+        update=_on_thumbnail_lighting_property_update,
+    )
+    thumbnail_light_height: bpy.props.FloatProperty(
+        name="Height",
+        description="Height of thumbnail lights around target",
+        default=1.0,
+        min=-10.0,
+        max=30.0,
+        update=_on_thumbnail_lighting_property_update,
+    )
+    thumbnail_light_distance: bpy.props.FloatProperty(
+        name="Distance",
+        description="Distance of thumbnail lights from target",
+        default=2.2,
+        min=0.2,
+        max=30.0,
+        update=_on_thumbnail_lighting_property_update,
+    )
+    thumbnail_light_strength: bpy.props.FloatProperty(
+        name="Strength",
+        description="Area light energy",
+        default=60.0,
+        min=0.0,
+        max=300.0,
+        update=_on_thumbnail_lighting_property_update,
+    )
+    thumbnail_transparent_background: bpy.props.BoolProperty(
+        name="Transparent Background",
+        description="Render PNG with transparent film",
+        default=True,
+        update=_on_thumbnail_transparent_background_update,
+    )
+    thumbnail_render_engine: bpy.props.EnumProperty(
+        name="Render Engine",
+        description="Engine used for thumbnail rendering",
+        items=[
+            ("EEVEE", "Eevee", "Use Eevee render engine"),
+            ("CYCLES", "Cycles", "Use Cycles render engine"),
+        ],
+        default="EEVEE",
+    )
+    thumbnail_resolution_preset: bpy.props.EnumProperty(
+        name="Output Size",
+        description="Square render size presets or custom size",
+        items=[
+            ("512", "512 x 512", "Render 512 square"),
+            ("1024", "1024 x 1024", "Render 1024 square"),
+            ("2048", "2048 x 2048", "Render 2048 square"),
+            ("CUSTOM", "Custom", "Use custom width and height"),
+        ],
+        default="1024",
+        update=_on_thumbnail_resolution_update,
+    )
+    thumbnail_resolution_x: bpy.props.IntProperty(
+        name="Width",
+        description="Custom output width in pixels",
+        default=1024,
+        min=16,
+        max=16384,
+        update=_on_thumbnail_resolution_update,
+    )
+    thumbnail_resolution_y: bpy.props.IntProperty(
+        name="Height",
+        description="Custom output height in pixels",
+        default=1024,
+        min=16,
+        max=16384,
+        update=_on_thumbnail_resolution_update,
+    )
+    thumbnail_png_compression: bpy.props.IntProperty(
+        name="Compression",
+        description="PNG compression amount (0 = fastest, 100 = smallest)",
+        default=85,
+        min=0,
+        max=100,
     )
 
 
@@ -313,6 +445,57 @@ def _draw_colliders(layout, props):
         _op(col, OBJECT_OT_cleanup_colliders.bl_idname, "Clean Up Colliders", "ERASER", "BRUSH_DATA")
 
 
+def _draw_generate_thumbnail(layout, props):
+    box, expanded = _section_header(layout, props, "thumbnail_expanded", "Generate Thumbnail")
+    if expanded:
+        col = box.column(align=True)
+        col.scale_y = 1.15
+
+        _op(col, OBJECT_OT_add_thumbnail_camera.bl_idname, "Add Camera", "CAMERA", "CAMERA_DATA")
+        cam_box = col.box()
+        cam_head = cam_box.row()
+        cam_head.prop(
+            props,
+            "thumbnail_camera_controls_expanded",
+            text="Camera Controls",
+            icon="TRIA_DOWN" if props.thumbnail_camera_controls_expanded else "TRIA_RIGHT",
+            emboss=False,
+        )
+        if props.thumbnail_camera_controls_expanded:
+            cam_box.prop(props, "thumbnail_camera_zoom", slider=True)
+            cam_box.prop(props, "thumbnail_camera_side", slider=True)
+            cam_box.prop(props, "thumbnail_camera_up", slider=True)
+            cam_box.prop(props, "thumbnail_camera_rotate", slider=True)
+
+        col.separator(factor=0.3)
+        _op(col, OBJECT_OT_add_thumbnail_lighting.bl_idname, "Add Lighting", "BULB", "LIGHT_AREA")
+        light_box = col.box()
+        light_head = light_box.row()
+        light_head.prop(
+            props,
+            "thumbnail_lighting_controls_expanded",
+            text="Lighting Controls",
+            icon="TRIA_DOWN" if props.thumbnail_lighting_controls_expanded else "TRIA_RIGHT",
+            emboss=False,
+        )
+        if props.thumbnail_lighting_controls_expanded:
+            light_box.prop(props, "thumbnail_light_count")
+            light_box.prop(props, "thumbnail_light_height", slider=True)
+            light_box.prop(props, "thumbnail_light_distance", slider=True)
+            light_box.prop(props, "thumbnail_light_strength", slider=True)
+
+        col.separator(factor=0.3)
+        col.prop(props, "thumbnail_transparent_background")
+        col.prop(props, "thumbnail_render_engine", text="Render Engine")
+        col.prop(props, "thumbnail_resolution_preset", text="Output Size")
+        if props.thumbnail_resolution_preset == "CUSTOM":
+            size_row = col.row(align=True)
+            size_row.prop(props, "thumbnail_resolution_x")
+            size_row.prop(props, "thumbnail_resolution_y")
+        col.prop(props, "thumbnail_png_compression", slider=True)
+        _op(col, OBJECT_OT_render_thumbnail.bl_idname, "Render Image", "PACKAGE_EXPORT", "RENDER_STILL")
+
+
 def _draw_other(layout, props):
     box, expanded = _section_header(layout, props, "other_expanded", "Other")
     if expanded:
@@ -359,6 +542,7 @@ class VIEW3D_PT_dcl_tools(bpy.types.Panel):
                 _draw_lod(layout, props, context)
             _draw_cleanup(layout, props)
             _draw_colliders(layout, props)
+            _draw_generate_thumbnail(layout, props)
             if props.show_experimental:
                 _draw_other(layout, props)
 
@@ -369,6 +553,7 @@ class VIEW3D_PT_dcl_tools(bpy.types.Panel):
                 _draw_lod(layout, props, context)
             _draw_cleanup(layout, props)
             _draw_colliders(layout, props)
+            _draw_generate_thumbnail(layout, props)
             if props.show_experimental:
                 _draw_other(layout, props)
 
@@ -376,6 +561,7 @@ class VIEW3D_PT_dcl_tools(bpy.types.Panel):
             _draw_avatars(layout, props)
             _draw_emotes(layout, props)
             _draw_materials(layout, props)
+            _draw_generate_thumbnail(layout, props)
             if props.show_experimental:
                 _draw_other(layout, props)
 
@@ -455,6 +641,9 @@ classes = (
     OBJECT_OT_validate_textures,
     OBJECT_OT_validate_scene,
     OBJECT_OT_generate_lod,
+    OBJECT_OT_add_thumbnail_camera,
+    OBJECT_OT_add_thumbnail_lighting,
+    OBJECT_OT_render_thumbnail,
     OBJECT_OT_quick_export_gltf,
     OBJECT_OT_export_scene,
     OBJECT_OT_update_all_exported,
