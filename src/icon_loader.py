@@ -85,6 +85,9 @@ ICONS = {
     "MAP_OFF": "map-off.png",  # Remove UVs
     "SPHERE_OFF": "sphere-off.png",  # Strip Materials
     "POLYGON": "polygon.png",  # Simplify
+    # Composite
+    "COMPOSITE_EXPORT": "file-export.png",  # Export Composite
+    "COMPOSITE_IMPORT": "file-import.png",  # Import Composite
     # Documentation
     "BOOK": "book.png",  # Documentation
     "BOOK_2": "book-2.png",  # Limits Guide

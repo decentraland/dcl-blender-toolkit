@@ -19,6 +19,7 @@ from .ops.documentation import OBJECT_OT_asset_guidelines, OBJECT_OT_open_docume
 from .ops.emote_actions import OBJECT_OT_create_emote_action, OBJECT_OT_set_emote_boundary_keyframes
 from .ops.compress_textures import OBJECT_OT_compress_textures
 from .ops.enable_backface_culling import OBJECT_OT_enable_backface_culling
+from .ops.export_composite import OBJECT_OT_export_composite
 from .ops.export_emote_glb import OBJECT_OT_export_emote_glb
 from .ops.export_lights import OBJECT_OT_export_lights
 from .ops.generate_thumbnail import (
@@ -31,6 +32,7 @@ from .ops.generate_thumbnail import (
     _on_thumbnail_transparent_background_update,
 )
 from .ops.generate_lod import OBJECT_OT_generate_lod, draw_lod_panel
+from .ops.import_composite import OBJECT_OT_import_composite
 from .ops.import_dcl_rig import OBJECT_OT_import_dcl_limit_area, OBJECT_OT_import_dcl_prop, OBJECT_OT_import_dcl_rig
 from .ops.link_avatar_wearables import OBJECT_OT_link_avatar_wearables
 from .ops.particle_to_armature import OBJECT_OT_particles_to_armature_converter
@@ -587,6 +589,10 @@ class VIEW3D_PT_dcl_export(bpy.types.Panel):
         row = col.row(align=True)
         _op(row, OBJECT_OT_quick_export_gltf.bl_idname, "Export glTF", "PACKAGE_EXPORT", "EXPORT")
         _op(row, OBJECT_OT_export_emote_glb.bl_idname, "Export Emote G...", "EMOTE_EXPORT", "EXPORT")
+        col.separator(factor=0.5)
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_export_composite.bl_idname, "Export Composite", "COMPOSITE_EXPORT", "EXPORT")
+        _op(row, OBJECT_OT_import_composite.bl_idname, "Import Composite", "COMPOSITE_IMPORT", "IMPORT")
 
 
 class VIEW3D_PT_dcl_help(bpy.types.Panel):
@@ -649,6 +655,8 @@ classes = (
     OBJECT_OT_quick_export_gltf,
     OBJECT_OT_export_scene,
     OBJECT_OT_update_all_exported,
+    OBJECT_OT_export_composite,
+    OBJECT_OT_import_composite,
     OBJECT_OT_open_documentation,
     OBJECT_OT_scene_limits_guide,
     OBJECT_OT_asset_guidelines,
