@@ -120,7 +120,7 @@ try:
         composite = json.load(f)
 
     check("composite version is 1", composite.get("version") == 1)
-    check("3 component types", len(composite.get("components", [])) == 3)
+    check("4 component types", len(composite.get("components", [])) == 4)
 
     # Extract component data
     comp_by_name = {c["name"]: c for c in composite["components"]}
@@ -229,7 +229,7 @@ try:
     print("\n=== Test 3: Round-trip Transform Update ===")
 
     # Modify the composite: move StandaloneCylinder to a new position
-    # DCL position {"x": 10, "y": 20, "z": 30} → Blender (-10, -30, 20)
+    # DCL position {"x": 10, "y": 20, "z": 30} → Blender (10, 30, 20)
     new_dcl_pos = {"x": 10.0, "y": 20.0, "z": 30.0}
     standalone_transform["position"] = new_dcl_pos
 
@@ -242,16 +242,16 @@ try:
     updated_obj = bpy.context.scene.objects.get("StandaloneCylinder")
     if updated_obj:
         loc = updated_obj.location
-        # Expected Blender coords: (-10, -30, 20)
+        # Expected Blender coords: (10, 30, 20) — axis swap only, no sign flip
         check(
             "updated X position",
-            abs(loc.x - (-10.0)) < 0.01,
-            f"got {loc.x}, expected -10.0",
+            abs(loc.x - 10.0) < 0.01,
+            f"got {loc.x}, expected 10.0",
         )
         check(
             "updated Y position",
-            abs(loc.y - (-30.0)) < 0.01,
-            f"got {loc.y}, expected -30.0",
+            abs(loc.y - 30.0) < 0.01,
+            f"got {loc.y}, expected 30.0",
         )
         check(
             "updated Z position",

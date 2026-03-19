@@ -71,9 +71,20 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
         return objs
 
     def _export_glb(self, context, obj, filepath):
-        """Export a single object as GLB, preserving selection state."""
+        """Export a single object as GLB at origin, preserving selection state.
+
+        Temporarily moves the object to the world origin so the GLB contains
+        geometry centered at (0,0,0).  The composite Transform handles placement.
+        """
         prev_selected = list(context.selected_objects)
         prev_active = context.view_layer.objects.active
+
+        # Save and zero out the world transform so the GLB is at origin
+        orig_matrix = obj.matrix_world.copy()
+        orig_parent = obj.parent
+        if orig_parent:
+            obj.parent = None
+        obj.matrix_world = obj.matrix_world.__class__.Identity(4)
 
         try:
             for o in prev_selected:
@@ -89,6 +100,11 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
                 export_yup=True,
             )
         finally:
+            # Restore original transform and parent
+            obj.matrix_world = orig_matrix
+            if orig_parent:
+                obj.parent = orig_parent
+
             obj.select_set(False)
             for o in prev_selected:
                 if o.name in context.scene.objects:
@@ -105,6 +121,64 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
             counter += 1
         used.add(candidate)
         return candidate + ".glb"
+
+    def _center_in_parcels(self, scene_dir, entities_data):
+        """Offset root entity positions so content is centered in the parcel grid.
+
+        Only called on fresh exports (no existing composite). Reads the parcel
+        layout from scene.json to determine the grid center, then shifts all
+        root entities (parent==0) so the content bounding box is centered.
+        """
+        # Read parcel layout from scene.json if it exists
+        scene_json_path = os.path.join(scene_dir, "scene.json")
+        parcels = [(0, 0)]
+        if os.path.isfile(scene_json_path):
+            try:
+                with open(scene_json_path) as f:
+                    sj = json.load(f)
+                raw_parcels = sj.get("scene", {}).get("parcels", ["0,0"])
+                parcels = []
+                for p in raw_parcels:
+                    if isinstance(p, str):
+                        x, y = p.split(",")
+                        parcels.append((int(x), int(y)))
+                    elif isinstance(p, dict):
+                        parcels.append((p.get("x", 0), p.get("y", 0)))
+            except (json.JSONDecodeError, OSError, ValueError):
+                parcels = [(0, 0)]
+
+        if not parcels:
+            return
+
+        # Parcel grid center in DCL world coords (each parcel = 16m)
+        min_px = min(p[0] for p in parcels)
+        max_px = max(p[0] for p in parcels)
+        min_pz = min(p[1] for p in parcels)
+        max_pz = max(p[1] for p in parcels)
+        grid_center_x = (min_px + max_px + 1) * 16 / 2
+        grid_center_z = (min_pz + max_pz + 1) * 16 / 2
+
+        # Content bounding box center (DCL coords, root entities only)
+        root_positions = [ent["transform"]["position"] for ent in entities_data if ent["transform"]["parent"] == 0]
+        if not root_positions:
+            return
+
+        content_min_x = min(p["x"] for p in root_positions)
+        content_max_x = max(p["x"] for p in root_positions)
+        content_min_z = min(p["z"] for p in root_positions)
+        content_max_z = max(p["z"] for p in root_positions)
+        content_center_x = (content_min_x + content_max_x) / 2
+        content_center_z = (content_min_z + content_max_z) / 2
+
+        # Offset to apply
+        offset_x = grid_center_x - content_center_x
+        offset_z = grid_center_z - content_center_z
+
+        # Apply offset to root entities only (children use local coords)
+        for ent in entities_data:
+            if ent["transform"]["parent"] == 0:
+                ent["transform"]["position"]["x"] += offset_x
+                ent["transform"]["position"]["z"] += offset_z
 
     def _build_entity_map(self, objects):
         """Build ``{obj.name: entity_id}`` reusing stored IDs when available."""
@@ -198,6 +272,10 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
 
             # Store entity ID on the Blender object for future re-exports
             obj[ENTITY_ID_PROP] = eid
+
+        # On fresh export, center content within the parcel grid
+        if not existing_composite:
+            self._center_in_parcels(scene_dir, entities_data)
 
         # Write main.composite — merge if existing, build fresh otherwise
         if existing_composite:
