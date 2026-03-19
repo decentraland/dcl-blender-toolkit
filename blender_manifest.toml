@@ -13,7 +13,7 @@ type = "add-on"
 blender_version_min = "4.2.0"
 
 license = ["SPDX:GPL-3.0-or-later"]
-website = "https://docs.decentraland.org"
+website = "https://github.com/decentraland/dcl-blender-toolkit"
 
 # Category in Blender's Extensions browser
 tags = ["Object", "Import-Export"]
