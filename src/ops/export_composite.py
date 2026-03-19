@@ -71,9 +71,20 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
         return objs
 
     def _export_glb(self, context, obj, filepath):
-        """Export a single object as GLB, preserving selection state."""
+        """Export a single object as GLB at origin, preserving selection state.
+
+        Temporarily moves the object to the world origin so the GLB contains
+        geometry centered at (0,0,0).  The composite Transform handles placement.
+        """
         prev_selected = list(context.selected_objects)
         prev_active = context.view_layer.objects.active
+
+        # Save and zero out the world transform so the GLB is at origin
+        orig_matrix = obj.matrix_world.copy()
+        orig_parent = obj.parent
+        if orig_parent:
+            obj.parent = None
+        obj.matrix_world = obj.matrix_world.__class__.Identity(4)
 
         try:
             for o in prev_selected:
@@ -89,6 +100,11 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
                 export_yup=True,
             )
         finally:
+            # Restore original transform and parent
+            obj.matrix_world = orig_matrix
+            if orig_parent:
+                obj.parent = orig_parent
+
             obj.select_set(False)
             for o in prev_selected:
                 if o.name in context.scene.objects:
