@@ -69,8 +69,8 @@ def _create_checker_material():
     # Meter-level checker (1m scale) — subtle offset (black / slight bump)
     meter_checker = nodes.new("ShaderNodeTexChecker")
     meter_checker.location = (0, -200)
-    meter_checker.inputs["Color1"].default_value = (0.0, 0.0, 0.0, 1.0)     # no offset
-    meter_checker.inputs["Color2"].default_value = (0.05, 0.05, 0.05, 1.0)   # slight lighten
+    meter_checker.inputs["Color1"].default_value = (0.0, 0.0, 0.0, 1.0)  # no offset
+    meter_checker.inputs["Color2"].default_value = (0.05, 0.05, 0.05, 1.0)  # slight lighten
     meter_checker.inputs["Scale"].default_value = 1.0
 
     # Object coordinates
@@ -102,6 +102,7 @@ def _create_checker_material():
 
 class OBJECT_OT_set_parcel_origin(bpy.types.Operator):
     """Helper operator to set the parcel origin from icon buttons."""
+
     bl_idname = "object.set_parcel_origin"
     bl_label = "Set Origin"
     bl_options = {"INTERNAL"}

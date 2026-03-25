@@ -29,6 +29,7 @@ from .ops.export_lights import OBJECT_OT_export_lights
 from .ops.generate_lod import OBJECT_OT_generate_lod, draw_lod_panel
 from .ops.import_composite import OBJECT_OT_import_composite
 from .ops.import_dcl_rig import OBJECT_OT_import_dcl_limit_area, OBJECT_OT_import_dcl_prop, OBJECT_OT_import_dcl_rig
+from .ops.install_theme import OBJECT_OT_install_dcl_theme
 from .ops.link_avatar_wearables import OBJECT_OT_link_avatar_wearables
 from .ops.particle_to_armature import OBJECT_OT_particles_to_armature_converter
 from .ops.quick_export_gltf import OBJECT_OT_export_scene, OBJECT_OT_quick_export_gltf, OBJECT_OT_update_all_exported
@@ -426,6 +427,8 @@ class VIEW3D_PT_dcl_help(bpy.types.Panel):
         _op(col, OBJECT_OT_open_documentation.bl_idname, "Creator Docs", "BOOK", "HELP")
         _op(col, OBJECT_OT_scene_limits_guide.bl_idname, "Limits Guide", "BOOK_2", "INFO")
         _op(col, OBJECT_OT_asset_guidelines.bl_idname, "Assets Guide", "FILE_DESC", "FILE_TEXT")
+        col.separator(factor=0.5)
+        _op(col, OBJECT_OT_install_dcl_theme.bl_idname, "Apply DCL Theme", "DCL_LOGO", "BRUSHES_ALL")
 
 
 # ---------------------------------------------------------------------------
@@ -474,6 +477,7 @@ classes = (
     OBJECT_OT_open_documentation,
     OBJECT_OT_scene_limits_guide,
     OBJECT_OT_asset_guidelines,
+    OBJECT_OT_install_dcl_theme,
     VIEW3D_PT_dcl_tools,
     VIEW3D_PT_dcl_export,
     VIEW3D_PT_dcl_help,
