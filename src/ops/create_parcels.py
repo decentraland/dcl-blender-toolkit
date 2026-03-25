@@ -166,7 +166,7 @@ class OBJECT_OT_create_parcels(bpy.types.Operator):
             ("TOP_LEFT", "Top Left", "Origin at the top-left corner"),
             ("TOP_RIGHT", "Top Right", "Origin at the top-right corner"),
         ],
-        default="CENTER",
+        default="BOTTOM_LEFT",
     )
 
     def execute(self, context):
@@ -274,6 +274,8 @@ class OBJECT_OT_create_parcels(bpy.types.Operator):
         _draw_origin_btn(grid, "BOTTOM_LEFT", current == "BOTTOM_LEFT")
         grid.label(text="")
         _draw_origin_btn(grid, "BOTTOM_RIGHT", current == "BOTTOM_RIGHT")
+
+        layout.label(text="Bottom Left is recommended for DCL scenes", icon="INFO")
 
     def invoke(self, context, event):
         # Initialize scene temp property
