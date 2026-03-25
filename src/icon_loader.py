@@ -88,6 +88,12 @@ ICONS = {
     # Composite
     "COMPOSITE_EXPORT": "file-export.png",  # Export Composite
     "COMPOSITE_IMPORT": "file-import.png",  # Import Composite
+    # Origin Point
+    "ORIGIN_TL": "origin-top-left.png",
+    "ORIGIN_TR": "origin-top-right.png",
+    "ORIGIN_CENTER": "origin-center.png",
+    "ORIGIN_BL": "origin-bottom-left.png",
+    "ORIGIN_BR": "origin-bottom-right.png",
     # Documentation
     "BOOK": "book.png",  # Documentation
     "BOOK_2": "book-2.png",  # Limits Guide

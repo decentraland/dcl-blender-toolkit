@@ -14,7 +14,12 @@ from bpy.utils import register_class, unregister_class
 from . import icon_loader
 from .ops.avatar_limitations import OBJECT_OT_avatar_limitations
 from .ops.cleanup_colliders import OBJECT_OT_cleanup_colliders
-from .ops.create_parcels import OBJECT_OT_create_parcels
+from .ops.create_parcels import (
+    OBJECT_OT_apply_checker_map,
+    OBJECT_OT_cleanup_checker_map,
+    OBJECT_OT_create_parcels,
+    OBJECT_OT_set_parcel_origin,
+)
 from .ops.documentation import OBJECT_OT_asset_guidelines, OBJECT_OT_open_documentation, OBJECT_OT_scene_limits_guide
 from .ops.emote_actions import OBJECT_OT_create_emote_action, OBJECT_OT_set_emote_boundary_keyframes
 from .ops.enable_backface_culling import OBJECT_OT_enable_backface_culling
@@ -217,6 +222,9 @@ def _draw_scene_creation(layout, props):
         row = col.row(align=True)
         _op(row, OBJECT_OT_scene_limitations.bl_idname, "Scene Limitations", "RULER", "INFO")
         _op(row, OBJECT_OT_validate_scene.bl_idname, "Scene Validator", "SHIELD_CHECK", "SEQUENCE")
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_apply_checker_map.bl_idname, "Checker Map", "GRID_DOTS", "TEXTURE")
+        _op(row, OBJECT_OT_cleanup_checker_map.bl_idname, "Cleanup All Checker Maps", "TRASH_X", "CANCEL")
 
 
 def _draw_avatars(layout, props):
@@ -442,6 +450,9 @@ classes = (
     OBJECT_OT_create_emote_action,
     OBJECT_OT_set_emote_boundary_keyframes,
     OBJECT_OT_create_parcels,
+    OBJECT_OT_set_parcel_origin,
+    OBJECT_OT_apply_checker_map,
+    OBJECT_OT_cleanup_checker_map,
     OBJECT_OT_rename_textures,
     OBJECT_OT_resize_textures,
     OBJECT_OT_enable_backface_culling,

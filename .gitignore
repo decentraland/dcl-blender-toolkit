@@ -44,6 +44,9 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Claude Code
+.claude/
+
 # Temporary files
 *.tmp
 *.temp
