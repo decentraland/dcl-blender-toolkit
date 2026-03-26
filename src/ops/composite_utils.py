@@ -14,13 +14,13 @@ FIRST_ENTITY_ID = 512
 
 
 def blender_pos_to_dcl(vec):
-    """Blender position → DCL position dict (Z-up → Y-up axis swap)."""
-    return {"x": vec[0], "y": vec[2], "z": vec[1]}
+    """Blender position → DCL position dict (Z-up → Y-up: x, z, -y)."""
+    return {"x": vec[0], "y": vec[2], "z": -vec[1]}
 
 
 def dcl_pos_to_blender(pos):
     """DCL position dict → Blender (x, y, z) tuple."""
-    return (pos["x"], pos["z"], pos["y"])
+    return (pos["x"], -pos["z"], pos["y"])
 
 
 def blender_quat_to_dcl(q):
