@@ -2,15 +2,13 @@
 
 import json
 import os
+import struct
 
 import bpy
 
 from .composite_utils import (
     ENTITY_ID_PROP,
     FIRST_ENTITY_ID,
-    blender_pos_to_dcl,
-    blender_quat_to_dcl,
-    blender_scale_to_dcl,
     build_composite,
     merge_composite,
     sanitize_filename,
@@ -70,28 +68,123 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
         objs.sort(key=lambda o: o.name)
         return objs
 
-    def _export_glb(self, context, obj, filepath):
-        """Export a single object as GLB at origin, preserving selection state.
+    @staticmethod
+    def _center_glb_vertices(filepath):
+        """Shift GLB vertex positions to center at origin, return the center.
 
-        Temporarily moves the object to the world origin so the GLB contains
-        geometry centered at (0,0,0).  The composite Transform handles placement.
+        Reads the GLB binary, computes the overall bounds center across ALL
+        primitives, subtracts it from every vertex position in every primitive,
+        updates the accessor min/max, and writes the file back.
+
+        Returns the center as ``[x, y, z]`` in glTF Y-up space (ready for
+        use as the composite position).
+        """
+        with open(filepath, "rb") as f:
+            header = f.read(12)
+            json_hdr = f.read(8)
+            json_len = struct.unpack("<I", json_hdr[:4])[0]
+            json_bytes = f.read(json_len)
+            bin_hdr = f.read(8)
+            bin_len = struct.unpack("<I", bin_hdr[:4])[0]
+            bin_data = bytearray(f.read(bin_len))
+
+        data = json.loads(json_bytes)
+
+        # Strip any node transform
+        for node in data.get("nodes", []):
+            node.pop("translation", None)
+            node.pop("rotation", None)
+            node.pop("scale", None)
+
+        # Collect ALL position accessors across all primitives
+        pos_accessors = []
+        for mesh in data.get("meshes", []):
+            for prim in mesh.get("primitives", []):
+                idx = prim.get("attributes", {}).get("POSITION")
+                if idx is not None:
+                    pos_accessors.append(data["accessors"][idx])
+
+        if not pos_accessors:
+            return [0, 0, 0]
+
+        # Compute overall bounds center across all primitives
+        global_min = [float("inf")] * 3
+        global_max = [float("-inf")] * 3
+        for acc in pos_accessors:
+            mn = acc.get("min", [0, 0, 0])
+            mx = acc.get("max", [0, 0, 0])
+            for i in range(3):
+                global_min[i] = min(global_min[i], mn[i])
+                global_max[i] = max(global_max[i], mx[i])
+
+        cx = (global_min[0] + global_max[0]) / 2
+        cy = (global_min[1] + global_max[1]) / 2
+        cz = (global_min[2] + global_max[2]) / 2
+
+        # Subtract center from vertex positions in ALL primitives
+        for acc in pos_accessors:
+            bv = data["bufferViews"][acc["bufferView"]]
+            acc_offset = bv.get("byteOffset", 0) + acc.get("byteOffset", 0)
+            count = acc["count"]
+            stride = bv.get("byteStride", 12)
+
+            for i in range(count):
+                off = acc_offset + i * stride
+                x, y, z = struct.unpack_from("<fff", bin_data, off)
+                struct.pack_into("<fff", bin_data, off, x - cx, y - cy, z - cz)
+
+            # Update this accessor's min/max
+            mn = acc.get("min", [0, 0, 0])
+            mx = acc.get("max", [0, 0, 0])
+            acc["min"] = [mn[0] - cx, mn[1] - cy, mn[2] - cz]
+            acc["max"] = [mx[0] - cx, mx[1] - cy, mx[2] - cz]
+
+        # Write modified GLB
+        new_json = json.dumps(data, separators=(",", ":")).encode("utf-8")
+        while len(new_json) % 4 != 0:
+            new_json += b" "
+
+        with open(filepath, "wb") as f:
+            total = 12 + 8 + len(new_json) + 8 + len(bin_data)
+            f.write(struct.pack("<III", 0x46546C67, 2, total))
+            f.write(struct.pack("<II", len(new_json), 0x4E4F534A))
+            f.write(new_json)
+            f.write(struct.pack("<II", len(bin_data), 0x004E4942))
+            f.write(bin_data)
+
+        return [cx, cy, cz]
+
+    def _export_glb(self, context, obj, filepath):
+        """Export a single object as GLB with all transforms baked, then centered.
+
+        1. Creates a temporary copy, applies ALL transforms to mesh data
+        2. Exports via glTF (vertices at world positions)
+        3. Post-processes the GLB binary to center vertices at origin
+        4. Stores the center as the composite position
         """
         prev_selected = list(context.selected_objects)
         prev_active = context.view_layer.objects.active
 
-        # Save and zero out the world transform so the GLB is at origin
-        orig_matrix = obj.matrix_world.copy()
-        orig_parent = obj.parent
-        if orig_parent:
-            obj.parent = None
-        obj.matrix_world = obj.matrix_world.__class__.Identity(4)
+        # Create a temporary copy with its own mesh data
+        temp_obj = obj.copy()
+        temp_obj.data = obj.data.copy()
+        context.scene.collection.objects.link(temp_obj)
+
+        # Set world transform from original, clear parent
+        temp_obj.parent = None
+        temp_obj.matrix_world = obj.matrix_world.copy()
 
         try:
             for o in prev_selected:
                 o.select_set(False)
-            obj.select_set(True)
-            context.view_layer.objects.active = obj
+            obj.select_set(False)
+            temp_obj.select_set(True)
+            context.view_layer.objects.active = temp_obj
 
+            # Bake ALL transforms into vertices (world positions)
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+            # Export
             bpy.ops.export_scene.gltf(
                 filepath=filepath,
                 export_format="GLB",
@@ -99,13 +192,12 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
                 export_apply=True,
                 export_yup=True,
             )
-        finally:
-            # Restore original transform and parent
-            obj.matrix_world = orig_matrix
-            if orig_parent:
-                obj.parent = orig_parent
 
-            obj.select_set(False)
+            # Post-process: center vertices at origin, capture center for composite
+            self._last_glb_center = self._center_glb_vertices(filepath)
+        finally:
+            bpy.data.objects.remove(temp_obj, do_unlink=True)
+
             for o in prev_selected:
                 if o.name in context.scene.objects:
                     o.select_set(True)
@@ -242,22 +334,18 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
 
             self._export_glb(context, obj, glb_path)
 
-            # Determine transform: local if parent is also exported, else world
+            # Position is the geometry bounds center (in glTF Y-up space),
+            # captured during GLB post-processing.
+            # Rotation and scale are baked into the GLB vertices.
             parent_eid = 0
             if obj.parent and obj.parent.name in entity_map:
                 parent_eid = entity_map[obj.parent.name]
-                mat = obj.matrix_local
-            else:
-                mat = obj.matrix_world
 
-            pos = mat.to_translation()
-            rot = mat.to_quaternion()
-            scl = mat.to_scale()
-
+            c = self._last_glb_center
             transform = {
-                "position": blender_pos_to_dcl(pos),
-                "rotation": blender_quat_to_dcl(rot),
-                "scale": blender_scale_to_dcl(scl),
+                "position": {"x": c[0], "y": c[1], "z": c[2]},
+                "rotation": {"x": 0, "y": 0, "z": 0, "w": 1},
+                "scale": {"x": 1, "y": 1, "z": 1},
                 "parent": parent_eid,
             }
 
@@ -272,10 +360,6 @@ class OBJECT_OT_export_composite(bpy.types.Operator):
 
             # Store entity ID on the Blender object for future re-exports
             obj[ENTITY_ID_PROP] = eid
-
-        # On fresh export, center content within the parcel grid
-        if not existing_composite:
-            self._center_in_parcels(scene_dir, entities_data)
 
         # Write main.composite — merge if existing, build fresh otherwise
         if existing_composite:

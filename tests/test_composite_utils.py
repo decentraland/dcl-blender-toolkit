@@ -23,12 +23,12 @@ from ops.composite_utils import (
 
 class TestPositionConversion:
     def test_blender_to_dcl(self):
-        # Blender (x=1, y=2, z=3) → DCL (x=1, y=3, z=2) — axis swap only
+        # Blender (x=1, y=2, z=3) → DCL (x=1, y=3, z=-2) — Y-up with Y negation
         result = blender_pos_to_dcl((1.0, 2.0, 3.0))
-        assert result == {"x": 1.0, "y": 3.0, "z": 2.0}
+        assert result == {"x": 1.0, "y": 3.0, "z": -2.0}
 
     def test_dcl_to_blender(self):
-        result = dcl_pos_to_blender({"x": 1.0, "y": 3.0, "z": 2.0})
+        result = dcl_pos_to_blender({"x": 1.0, "y": 3.0, "z": -2.0})
         assert result == (1.0, 2.0, 3.0)
 
     def test_roundtrip(self):

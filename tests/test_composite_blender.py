@@ -229,7 +229,7 @@ try:
     print("\n=== Test 3: Round-trip Transform Update ===")
 
     # Modify the composite: move StandaloneCylinder to a new position
-    # DCL position {"x": 10, "y": 20, "z": 30} → Blender (10, 30, 20)
+    # DCL position {"x": 10, "y": 20, "z": 30} → Blender (10, -30, 20)
     new_dcl_pos = {"x": 10.0, "y": 20.0, "z": 30.0}
     standalone_transform["position"] = new_dcl_pos
 
@@ -242,7 +242,7 @@ try:
     updated_obj = bpy.context.scene.objects.get("StandaloneCylinder")
     if updated_obj:
         loc = updated_obj.location
-        # Expected Blender coords: (10, 30, 20) — axis swap only, no sign flip
+        # Expected Blender coords: (10, -30, 20) — Y-up with Y negation
         check(
             "updated X position",
             abs(loc.x - 10.0) < 0.01,
@@ -250,8 +250,8 @@ try:
         )
         check(
             "updated Y position",
-            abs(loc.y - 30.0) < 0.01,
-            f"got {loc.y}, expected 30.0",
+            abs(loc.y - (-30.0)) < 0.01,
+            f"got {loc.y}, expected -30.0",
         )
         check(
             "updated Z position",
