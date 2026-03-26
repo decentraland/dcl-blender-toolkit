@@ -14,23 +14,23 @@ FIRST_ENTITY_ID = 512
 
 
 def blender_pos_to_dcl(vec):
-    """Blender position → DCL position dict."""
-    return {"x": -vec[0], "y": vec[2], "z": -vec[1]}
+    """Blender position → DCL position dict (Z-up → Y-up: x, z, -y)."""
+    return {"x": vec[0], "y": vec[2], "z": -vec[1]}
 
 
 def dcl_pos_to_blender(pos):
     """DCL position dict → Blender (x, y, z) tuple."""
-    return (-pos["x"], -pos["z"], pos["y"])
+    return (pos["x"], -pos["z"], pos["y"])
 
 
 def blender_quat_to_dcl(q):
-    """Blender quaternion (w,x,y,z) → DCL rotation dict."""
-    return {"x": -q[1], "y": q[3], "z": -q[2], "w": q[0]}
+    """Blender quaternion (w,x,y,z) → DCL rotation dict (Z-up → Y-up axis swap)."""
+    return {"x": q[1], "y": q[3], "z": q[2], "w": q[0]}
 
 
 def dcl_quat_to_blender(r):
     """DCL rotation dict → Blender (w, x, y, z) tuple."""
-    return (r["w"], -r["x"], -r["z"], r["y"])
+    return (r["w"], r["x"], r["z"], r["y"])
 
 
 def blender_scale_to_dcl(s):
@@ -112,10 +112,51 @@ _NAME_SCHEMA = {
 }
 
 
-MANAGED_COMPONENTS = {"core::Transform", "core::GltfContainer", "core-schema::Name"}
+MANAGED_COMPONENTS = {"core::Transform", "core::GltfContainer", "core-schema::Name", "inspector::Nodes"}
+
+_NODES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "value": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "entity": {"type": "integer", "serializationType": "entity"},
+                    "open": {
+                        "type": "boolean",
+                        "serializationType": "optional",
+                        "optionalJsonSchema": {"type": "boolean", "serializationType": "boolean"},
+                    },
+                    "children": {
+                        "type": "array",
+                        "items": {"type": "integer", "serializationType": "entity"},
+                        "serializationType": "array",
+                    },
+                },
+                "serializationType": "map",
+            },
+            "serializationType": "array",
+        },
+    },
+    "serializationType": "map",
+}
 
 # Custom property key used to store the DCL entity ID on Blender objects
 ENTITY_ID_PROP = "dcl_entity_id"
+
+
+def _build_nodes_data(entity_ids):
+    """Build ``inspector::Nodes`` data so all entities appear in the Inspector tree."""
+    # Root node (entity 0) has all top-level entities as children
+    nodes = [{"entity": 0, "open": True, "children": sorted(entity_ids)}]
+    # Each entity gets a leaf node
+    for eid in sorted(entity_ids):
+        nodes.append({"entity": eid, "children": []})
+    # Standard system entities
+    nodes.append({"entity": 1, "children": []})
+    nodes.append({"entity": 2, "children": []})
+    return {"0": {"json": {"value": nodes}}}
 
 
 def build_composite(entities_data):
@@ -137,6 +178,8 @@ def build_composite(entities_data):
         gltf_data[eid] = {"json": {"src": ent["gltf_src"]}}
         name_data[eid] = {"json": {"value": ent["name"]}}
 
+    entity_ids = [ent["entity_id"] for ent in entities_data]
+
     return {
         "version": COMPOSITE_VERSION,
         "components": [
@@ -154,6 +197,11 @@ def build_composite(entities_data):
                 "name": "core-schema::Name",
                 "jsonSchema": _NAME_SCHEMA,
                 "data": name_data,
+            },
+            {
+                "name": "inspector::Nodes",
+                "jsonSchema": _NODES_SCHEMA,
+                "data": _build_nodes_data(entity_ids),
             },
         ],
     }
@@ -181,10 +229,18 @@ def merge_composite(existing, entities_data):
         new_gltf[eid] = {"json": {"src": ent["gltf_src"]}}
         new_name[eid] = {"json": {"value": ent["name"]}}
 
+    # Collect all entity IDs for the Nodes tree: new entities + existing ones from Transform
+    all_entity_ids = {ent["entity_id"] for ent in entities_data}
+    for comp in existing.get("components", []):
+        if comp["name"] == "core::Transform":
+            for eid_str in comp.get("data", {}):
+                all_entity_ids.add(int(eid_str))
+
     new_managed = {
         "core::Transform": (_TRANSFORM_SCHEMA, new_transform),
         "core::GltfContainer": (_GLTF_CONTAINER_SCHEMA, new_gltf),
         "core-schema::Name": (_NAME_SCHEMA, new_name),
+        "inspector::Nodes": (_NODES_SCHEMA, _build_nodes_data(all_entity_ids)),
     }
 
     result_components = []
@@ -210,7 +266,7 @@ def merge_composite(existing, entities_data):
             result_components.append(comp)
 
     # Add any managed components that weren't in the existing composite
-    for cname in ("core::Transform", "core::GltfContainer", "core-schema::Name"):
+    for cname in ("core::Transform", "core::GltfContainer", "core-schema::Name", "inspector::Nodes"):
         if cname not in seen_managed:
             schema, new_data = new_managed[cname]
             result_components.append(

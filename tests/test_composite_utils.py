@@ -23,11 +23,12 @@ from ops.composite_utils import (
 
 class TestPositionConversion:
     def test_blender_to_dcl(self):
+        # Blender (x=1, y=2, z=3) → DCL (x=1, y=3, z=-2) — Y-up with Y negation
         result = blender_pos_to_dcl((1.0, 2.0, 3.0))
-        assert result == {"x": -1.0, "y": 3.0, "z": -2.0}
+        assert result == {"x": 1.0, "y": 3.0, "z": -2.0}
 
     def test_dcl_to_blender(self):
-        result = dcl_pos_to_blender({"x": -1.0, "y": 3.0, "z": -2.0})
+        result = dcl_pos_to_blender({"x": 1.0, "y": 3.0, "z": -2.0})
         assert result == (1.0, 2.0, 3.0)
 
     def test_roundtrip(self):
@@ -110,12 +111,13 @@ class TestBuildComposite:
         result = build_composite(entities)
 
         assert result["version"] == COMPOSITE_VERSION
-        assert len(result["components"]) == 3
+        assert len(result["components"]) == 4
 
         names = [c["name"] for c in result["components"]]
         assert "core::Transform" in names
         assert "core::GltfContainer" in names
         assert "core-schema::Name" in names
+        assert "inspector::Nodes" in names
 
     def test_entity_data_format(self):
         entities = [

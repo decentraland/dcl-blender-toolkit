@@ -15,7 +15,12 @@ from . import icon_loader
 from .ops.avatar_limitations import OBJECT_OT_avatar_limitations
 from .ops.cleanup_colliders import OBJECT_OT_cleanup_colliders
 from .ops.compress_textures import OBJECT_OT_compress_textures
-from .ops.create_parcels import OBJECT_OT_create_parcels
+from .ops.create_parcels import (
+    OBJECT_OT_apply_checker_map,
+    OBJECT_OT_cleanup_checker_map,
+    OBJECT_OT_create_parcels,
+    OBJECT_OT_set_parcel_origin,
+)
 from .ops.documentation import OBJECT_OT_asset_guidelines, OBJECT_OT_open_documentation, OBJECT_OT_scene_limits_guide
 from .ops.emote_actions import OBJECT_OT_create_emote_action, OBJECT_OT_set_emote_boundary_keyframes
 from .ops.enable_backface_culling import OBJECT_OT_enable_backface_culling
@@ -25,6 +30,7 @@ from .ops.export_lights import OBJECT_OT_export_lights
 from .ops.generate_lod import OBJECT_OT_generate_lod, draw_lod_panel
 from .ops.import_composite import OBJECT_OT_import_composite
 from .ops.import_dcl_rig import OBJECT_OT_import_dcl_limit_area, OBJECT_OT_import_dcl_prop, OBJECT_OT_import_dcl_rig
+from .ops.install_theme import OBJECT_OT_install_dcl_theme
 from .ops.link_avatar_wearables import OBJECT_OT_link_avatar_wearables
 from .ops.particle_to_armature import OBJECT_OT_particles_to_armature_converter
 from .ops.quick_export_gltf import OBJECT_OT_export_scene, OBJECT_OT_quick_export_gltf, OBJECT_OT_update_all_exported
@@ -219,6 +225,9 @@ def _draw_scene_creation(layout, props):
         row = col.row(align=True)
         _op(row, OBJECT_OT_scene_limitations.bl_idname, "Scene Limitations", "RULER", "INFO")
         _op(row, OBJECT_OT_validate_scene.bl_idname, "Scene Validator", "SHIELD_CHECK", "SEQUENCE")
+        row = col.row(align=True)
+        _op(row, OBJECT_OT_apply_checker_map.bl_idname, "Checker Map", "GRID_DOTS", "TEXTURE")
+        _op(row, OBJECT_OT_cleanup_checker_map.bl_idname, "Cleanup All Checker Maps", "TRASH_X", "CANCEL")
 
 
 def _draw_avatars(layout, props):
@@ -424,6 +433,8 @@ class VIEW3D_PT_dcl_help(bpy.types.Panel):
         _op(col, OBJECT_OT_open_documentation.bl_idname, "Creator Docs", "BOOK", "HELP")
         _op(col, OBJECT_OT_scene_limits_guide.bl_idname, "Limits Guide", "BOOK_2", "INFO")
         _op(col, OBJECT_OT_asset_guidelines.bl_idname, "Assets Guide", "FILE_DESC", "FILE_TEXT")
+        col.separator(factor=0.5)
+        _op(col, OBJECT_OT_install_dcl_theme.bl_idname, "Apply DCL Theme", "DCL_LOGO", "BRUSHES_ALL")
 
 
 # ---------------------------------------------------------------------------
@@ -448,6 +459,9 @@ classes = (
     OBJECT_OT_create_emote_action,
     OBJECT_OT_set_emote_boundary_keyframes,
     OBJECT_OT_create_parcels,
+    OBJECT_OT_set_parcel_origin,
+    OBJECT_OT_apply_checker_map,
+    OBJECT_OT_cleanup_checker_map,
     OBJECT_OT_rename_textures,
     OBJECT_OT_resize_textures,
     OBJECT_OT_compress_textures,
@@ -471,6 +485,7 @@ classes = (
     OBJECT_OT_open_documentation,
     OBJECT_OT_scene_limits_guide,
     OBJECT_OT_asset_guidelines,
+    OBJECT_OT_install_dcl_theme,
     VIEW3D_PT_dcl_tools,
     VIEW3D_PT_dcl_export,
     VIEW3D_PT_dcl_help,
