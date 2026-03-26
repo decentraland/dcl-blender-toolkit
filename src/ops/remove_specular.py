@@ -5,8 +5,7 @@ class OBJECT_OT_remove_specular(bpy.types.Operator):
     bl_idname = "object.remove_specular"
     bl_label = "Remove Specular"
     bl_description = (
-        "Remove specular tint textures and set specular values to 0 "
-        "on Principled BSDF materials to reduce file size"
+        "Remove specular tint textures and set specular values to 0 on Principled BSDF materials to reduce file size"
     )
     bl_options = {"REGISTER", "UNDO"}
 
