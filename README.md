@@ -96,6 +96,8 @@ The panel is organized into collapsible sections in the **3D Viewport Sidebar (N
 | **Resize Textures** | Batch resize textures to target resolutions (64-1024px) with optional backup |
 | **Validate Textures** | Check all textures for glTF/DCL compatibility (power-of-two, size, format) |
 | **Enable Backface Culling** | Enable backface culling on all materials in the scene |
+| **Remove Specular** | Remove specular tint textures and set specular values to 0 on Principled BSDF materials to reduce file size |
+| **Compress Images** | Compress textures to JPEG or PNG with configurable quality. Auto mode uses JPEG for opaque images and PNG for transparent, with an option to force JPEG when no alpha is present |
 
 ### Generate Thumbnail
 
