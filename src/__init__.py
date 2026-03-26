@@ -14,10 +14,10 @@ from bpy.utils import register_class, unregister_class
 from . import icon_loader
 from .ops.avatar_limitations import OBJECT_OT_avatar_limitations
 from .ops.cleanup_colliders import OBJECT_OT_cleanup_colliders
+from .ops.compress_textures import OBJECT_OT_compress_textures
 from .ops.create_parcels import OBJECT_OT_create_parcels
 from .ops.documentation import OBJECT_OT_asset_guidelines, OBJECT_OT_open_documentation, OBJECT_OT_scene_limits_guide
 from .ops.emote_actions import OBJECT_OT_create_emote_action, OBJECT_OT_set_emote_boundary_keyframes
-from .ops.compress_textures import OBJECT_OT_compress_textures
 from .ops.enable_backface_culling import OBJECT_OT_enable_backface_culling
 from .ops.export_composite import OBJECT_OT_export_composite
 from .ops.export_emote_glb import OBJECT_OT_export_emote_glb
