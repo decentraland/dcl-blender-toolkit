@@ -21,6 +21,7 @@ from .ops.enable_backface_culling import OBJECT_OT_enable_backface_culling
 from .ops.export_composite import OBJECT_OT_export_composite
 from .ops.export_emote_glb import OBJECT_OT_export_emote_glb
 from .ops.export_lights import OBJECT_OT_export_lights
+from .ops.generate_lod import OBJECT_OT_generate_lod, draw_lod_panel
 from .ops.generate_thumbnail import (
     OBJECT_OT_add_thumbnail_camera,
     OBJECT_OT_add_thumbnail_lighting,
@@ -30,7 +31,6 @@ from .ops.generate_thumbnail import (
     _on_thumbnail_resolution_update,
     _on_thumbnail_transparent_background_update,
 )
-from .ops.generate_lod import OBJECT_OT_generate_lod, draw_lod_panel
 from .ops.import_composite import OBJECT_OT_import_composite
 from .ops.import_dcl_rig import OBJECT_OT_import_dcl_limit_area, OBJECT_OT_import_dcl_prop, OBJECT_OT_import_dcl_rig
 from .ops.link_avatar_wearables import OBJECT_OT_link_avatar_wearables
