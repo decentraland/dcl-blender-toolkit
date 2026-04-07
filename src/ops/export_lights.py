@@ -1,7 +1,9 @@
 import json
+import math
 import os
 
 import bpy
+import mathutils
 
 
 class OBJECT_OT_export_lights(bpy.types.Operator):
@@ -10,10 +12,11 @@ class OBJECT_OT_export_lights(bpy.types.Operator):
     bl_description = "Export lights from LightsEXPORT collection to JSON file"
     bl_options = {"REGISTER", "UNDO"}
 
-    export_folder: bpy.props.StringProperty(
-        name="Export Folder",
-        description="Folder name to export lights JSON file (will be created in Desktop)",
-        default="lights_export",
+    export_dir: bpy.props.StringProperty(
+        name="Output Directory",
+        description="Folder where the lights JSON will be saved",
+        default="",
+        subtype="DIR_PATH",
     )
 
     collection_name: bpy.props.StringProperty(
@@ -30,6 +33,8 @@ class OBJECT_OT_export_lights(bpy.types.Operator):
                 continue
 
             matrix_world = ob.matrix_world.copy()
+
+            # Position: Blender -> SDK coordinate conversion
             blender_pos = matrix_world.to_translation()
             sdk_pos = {
                 "x": -blender_pos.x,
@@ -37,23 +42,82 @@ class OBJECT_OT_export_lights(bpy.types.Operator):
                 "z": -blender_pos.y,
             }
 
+            # Rotation: Blender -> SDK quaternion conversion
+            blender_rot = matrix_world.to_quaternion()
+            sdk_quat = mathutils.Quaternion(
+                (blender_rot.w, blender_rot.x, -blender_rot.z, blender_rot.y)
+            )
+
+            # For spot lights: apply direction correction
+            # Blender spots point along local -Z (downward in Z-up)
+            # DCL/Unity spots point along local forward (+Z in Y-up)
+            # Correction: +90 degrees around X to point spots downward in DCL
+            if ob.data.type == "SPOT":
+                correction = mathutils.Quaternion((1, 0, 0), math.radians(90))
+                sdk_quat = sdk_quat @ correction
+
+            sdk_rot = {
+                "w": sdk_quat.w,
+                "x": sdk_quat.x,
+                "y": sdk_quat.y,
+                "z": sdk_quat.z,
+            }
+
+            # Color
             color = ob.data.color
             sdk_color = {"r": color.r, "g": color.g, "b": color.b}
 
-            intensity = ob.data.energy * 100
-            range_val = getattr(ob.data, "range", 10)
+            # Intensity: use custom property 'intensity' if set (direct DCL value),
+            # otherwise convert Blender watts to DCL intensity (× 400)
+            intensity = ob.data.get("intensity")
+            if not intensity:
+                intensity = ob.data.energy * 400
+
+            # Range (custom property or default)
+            range_val = ob.data.get("range")
             if not range_val:
                 range_val = 10
 
-            objs_data.append(
-                {
-                    "name": ob.name,
-                    "position": sdk_pos,
-                    "color": sdk_color,
-                    "intensity": intensity,
-                    "range": range_val,
-                }
-            )
+            # Shadow: use Blender's native Cast Shadow setting
+            shadow = ob.data.use_shadow
+
+            # Light type: POINT or SPOT
+            light_type = "POINT"
+            spot_inner_angle = 21.8
+            spot_outer_angle = 30.0
+
+            if ob.data.type == "SPOT":
+                light_type = "SPOT"
+                # Blender spot_size is the full cone angle in radians
+                # Blender spot_blend is 0-1, controls softness (1 = fully soft)
+                full_angle_deg = math.degrees(ob.data.spot_size)
+                blend = ob.data.spot_blend
+
+                # DCL angle mapping calibrated from Blender:
+                # outerAngle ≈ full Blender angle
+                # innerAngle = full_angle * blend * 0.26
+                spot_outer_angle = full_angle_deg
+                spot_inner_angle = full_angle_deg * blend * 0.26
+                # Clamp to DCL limits (0-179)
+                spot_inner_angle = max(0, min(179, spot_inner_angle))
+                spot_outer_angle = max(0, min(179, spot_outer_angle))
+
+            ob_data = {
+                "name": ob.name,
+                "type": light_type,
+                "position": sdk_pos,
+                "rotation": sdk_rot,
+                "color": sdk_color,
+                "intensity": intensity,
+                "range": range_val,
+                "shadow": shadow,
+            }
+
+            if light_type == "SPOT":
+                ob_data["innerAngle"] = spot_inner_angle
+                ob_data["outerAngle"] = spot_outer_angle
+
+            objs_data.append(ob_data)
 
         return objs_data
 
@@ -92,19 +156,8 @@ class OBJECT_OT_export_lights(bpy.types.Operator):
 
         lights_json = json.dumps(lights_data, indent=4)
 
-        # Use blend file directory with user-specified folder name
-        if bpy.data.filepath:
-            blend_dir = os.path.dirname(bpy.data.filepath)
-            export_path = os.path.join(blend_dir, self.export_folder)
-        else:
-            home_dir = os.path.expanduser("~")
-            export_path = os.path.join(home_dir, "Desktop", self.export_folder)
-
-        try:
-            os.makedirs(export_path, exist_ok=True)
-        except Exception:
-            export_path = os.path.join(os.getcwd(), self.export_folder)
-            os.makedirs(export_path, exist_ok=True)
+        export_path = self._resolve_export_dir()
+        os.makedirs(export_path, exist_ok=True)
 
         output_file = os.path.join(export_path, master_collection.name + ".json")
 
@@ -119,10 +172,27 @@ class OBJECT_OT_export_lights(bpy.types.Operator):
 
         return {"FINISHED"}
 
+    def _resolve_export_dir(self):
+        raw = self.export_dir.strip()
+        if raw:
+            return os.path.normpath(bpy.path.abspath(raw))
+        if bpy.data.filepath:
+            return os.path.join(os.path.dirname(bpy.data.filepath), "lights_export")
+        return os.path.join(os.path.expanduser("~"), "Desktop", "lights_export")
+
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, "export_folder")
-        layout.prop(self, "collection_name")
+        layout.prop_search(self, "collection_name", bpy.data, "collections", icon="OUTLINER_COLLECTION")
+        layout.prop(self, "export_dir")
+        out = self._resolve_export_dir()
+        layout.label(text=f"Output: {out}", icon="FILE_FOLDER")
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
+        col = context.collection
+        if col and col != context.scene.collection:
+            self.collection_name = col.name
+
+        if not self.export_dir and bpy.data.filepath:
+            self.export_dir = os.path.dirname(bpy.data.filepath)
+
+        return context.window_manager.invoke_props_dialog(self, width=450)

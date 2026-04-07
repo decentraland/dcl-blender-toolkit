@@ -26,6 +26,7 @@ from .ops.emote_actions import OBJECT_OT_create_emote_action, OBJECT_OT_set_emot
 from .ops.enable_backface_culling import OBJECT_OT_enable_backface_culling
 from .ops.export_composite import OBJECT_OT_export_composite
 from .ops.export_emote_glb import OBJECT_OT_export_emote_glb
+from .ops.export_instances import OBJECT_OT_export_instances
 from .ops.export_lights import OBJECT_OT_export_lights
 from .ops.generate_lod import OBJECT_OT_generate_lod, draw_lod_panel
 from .ops.generate_thumbnail import (
@@ -518,7 +519,8 @@ def _draw_other(layout, props):
         col.scale_y = 1.2
         row = col.row(align=True)
         _op(row, OBJECT_OT_export_lights.bl_idname, "Export Lights", "BULB", "LIGHT_DATA")
-        _op(row, OBJECT_OT_particles_to_armature_converter.bl_idname, "Particle2Armat...", "BONE", "PARTICLES")
+        _op(row, OBJECT_OT_export_instances.bl_idname, "Export Instances", "PACKAGE_EXPORT", "EXPORT")
+        _op(col, OBJECT_OT_particles_to_armature_converter.bl_idname, "Particle2Armature", "BONE", "PARTICLES")
 
 
 # ---------------------------------------------------------------------------
@@ -602,6 +604,7 @@ class VIEW3D_PT_dcl_export(bpy.types.Panel):
         row = col.row(align=True)
         _op(row, OBJECT_OT_export_composite.bl_idname, "Export Composite", "COMPOSITE_EXPORT", "EXPORT")
         _op(row, OBJECT_OT_import_composite.bl_idname, "Import Composite", "COMPOSITE_IMPORT", "IMPORT")
+        col.separator(factor=0.5)
 
 
 class VIEW3D_PT_dcl_help(bpy.types.Panel):
@@ -670,6 +673,7 @@ classes = (
     OBJECT_OT_export_scene,
     OBJECT_OT_update_all_exported,
     OBJECT_OT_export_composite,
+    OBJECT_OT_export_instances,
     OBJECT_OT_import_composite,
     OBJECT_OT_open_documentation,
     OBJECT_OT_scene_limits_guide,

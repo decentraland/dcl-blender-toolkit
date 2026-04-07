@@ -139,6 +139,7 @@ The panel is organized into collapsible sections in the **3D Viewport Sidebar (N
 |------|-------------|
 | **Export glTF (.glb)** | One-click GLB export with DCL-optimized defaults. Automatically realizes collection instances. Includes browsable export path picker |
 | **Atlas Optimizer** | Non-destructive PBR atlas pass at export time. Merges 2-4 compatible materials into a single atlas (BaseColor + ORM + Normal + Emissive) to reduce draw calls. Conservative and Aggressive modes |
+| **Export Composite** | Export/import scene data in the Decentraland composite format |
 
 ### Documentation
 
@@ -152,7 +153,8 @@ The panel is organized into collapsible sections in the **3D Viewport Sidebar (N
 
 | Tool | Description |
 |------|-------------|
-| **Export Lights** | Export lights to JSON formatted for the Decentraland SDK |
+| **Export Lights** | Export point and spot lights from a collection to JSON for the Decentraland SDK. Supports position, rotation, color, intensity, range, shadow, and spot light cone angles (innerAngle/outerAngle) |
+| **Export Instances** | Export collection instances as JSON with position, rotation, and scale for the Decentraland SDK |
 | **Particle to Armature** | Convert particle systems into armature-driven animations |
 
 ## Development
