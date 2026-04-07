@@ -44,9 +44,7 @@ class OBJECT_OT_export_lights(bpy.types.Operator):
 
             # Rotation: Blender -> SDK quaternion conversion
             blender_rot = matrix_world.to_quaternion()
-            sdk_quat = mathutils.Quaternion(
-                (blender_rot.w, blender_rot.x, -blender_rot.z, blender_rot.y)
-            )
+            sdk_quat = mathutils.Quaternion((blender_rot.w, blender_rot.x, -blender_rot.z, blender_rot.y))
 
             # For spot lights: apply direction correction
             # Blender spots point along local -Z (downward in Z-up)

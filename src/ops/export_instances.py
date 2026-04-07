@@ -10,8 +10,7 @@ class OBJECT_OT_export_instances(bpy.types.Operator):
     bl_idname = "object.export_instances"
     bl_label = "Export Instances"
     bl_description = (
-        "Export collection instances as individual GLBs and a JSON file "
-        "with Decentraland-compatible transforms"
+        "Export collection instances as individual GLBs and a JSON file with Decentraland-compatible transforms"
     )
     bl_options = {"REGISTER", "UNDO"}
 
