@@ -67,15 +67,32 @@ class OBJECT_OT_validate_textures(bpy.types.Operator):
             return {"FINISHED"}
 
         total_issues = 0
+        problem_names = []
+
+        print(f"\n=== DCL Validate Textures ({len(textures)} texture(s), max size {self.max_size}px) ===")
         for img in textures:
             issues = self._validate_texture(img)
-            total_issues += len(issues)
+            size = f"{img.size[0]}x{img.size[1]}"
+            if issues:
+                total_issues += len(issues)
+                problem_names.append(img.name)
+                worst = "ERROR" if any(level == "ERROR" for level, _ in issues) else "WARNING"
+                print(f"[{worst}] {img.name} ({size})")
+                for level, msg in issues:
+                    print(f"    {level}: {msg}")
+            else:
+                print(f"[OK] {img.name} ({size})")
+        print("=== End of texture report ===\n")
 
         if total_issues == 0:
             self.report({"INFO"}, f"All {len(textures)} textures passed validation")
         else:
+            preview = ", ".join(problem_names[:4])
+            if len(problem_names) > 4:
+                preview += f" (+{len(problem_names) - 4} more)"
             self.report(
-                {"WARNING"}, f"Found {total_issues} issue(s) across {len(textures)} textures. See dialog for details."
+                {"WARNING"},
+                f"{len(problem_names)} texture(s) with issues: {preview} - full report in console",
             )
         return {"FINISHED"}
 
@@ -132,7 +149,12 @@ class OBJECT_OT_validate_textures(bpy.types.Operator):
         # Passed
         if passed:
             box = layout.box()
-            box.label(text=f"{len(passed)} texture(s) OK", icon="CHECKMARK")
+            box.label(text=f"{len(passed)} texture(s) OK:", icon="CHECKMARK")
+            col = box.column(align=True)
+            for img in passed[:15]:
+                col.label(text=f"    {img.name} ({img.size[0]}x{img.size[1]})")
+            if len(passed) > 15:
+                col.label(text=f"    ... and {len(passed) - 15} more")
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self, width=450)
