@@ -66,8 +66,7 @@ The panel is organized into collapsible sections in the **3D Viewport Sidebar (N
 | Tool | Description |
 |------|-------------|
 | **Create Parcels** | Generate a parcel grid with customizable X/Y dimensions (16m per parcel) |
-| **Scene Limitations Calculator** | Analyze current scene usage against Decentraland limits (triangles, entities, bodies, materials, textures, height) |
-| **Scene Validator (Pre-flight)** | One-click pre-flight check with green/yellow/red status for all DCL limits, transforms, materials, and textures |
+| **Scene Validator (Pre-flight)** | One-click pre-flight check with green/yellow/red status for all DCL limits (triangles, entities, bodies, materials, textures, height), transforms, materials, textures, and file limits |
 
 ### Avatars
 
@@ -225,7 +224,6 @@ dcl-blender-toolkit/
 │       ├── scene_utils.py        # Shared: DCL limit calculations, usage counting
 │       ├── emote_utils.py        # Shared: armature/action helpers
 │       ├── create_parcels.py     # Generate parcel grid
-│       ├── scene_limitations.py  # Scene limits calculator
 │       ├── validate_scene.py     # Scene pre-flight validator
 │       ├── link_avatar_wearables.py  # Import avatar shapes
 │       ├── avatar_limitations.py     # Wearable limits checker

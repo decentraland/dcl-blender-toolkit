@@ -57,7 +57,6 @@ from .ops.replace_materials import (
     OBJECT_OT_replace_materials,
 )
 from .ops.resize_textures import OBJECT_OT_resize_textures
-from .ops.scene_limitations import OBJECT_OT_scene_limitations
 from .ops.simplify_colliders import OBJECT_OT_simplify_colliders
 from .ops.strip_materials import OBJECT_OT_strip_materials_from_colliders
 from .ops.validate_emote import OBJECT_OT_validate_emote
@@ -356,9 +355,7 @@ def _draw_scene_creation(layout, props):
         col = box.column(align=True)
         col.scale_y = 1.2
         _op(col, OBJECT_OT_create_parcels.bl_idname, "Create Parcels", "GRID_DOTS", "MESH_PLANE")
-        row = col.row(align=True)
-        _op(row, OBJECT_OT_scene_limitations.bl_idname, "Scene Limitations", "RULER", "INFO")
-        _op(row, OBJECT_OT_validate_scene.bl_idname, "Scene Validator", "SHIELD_CHECK", "SEQUENCE")
+        _op(col, OBJECT_OT_validate_scene.bl_idname, "Scene Validator", "SHIELD_CHECK", "SEQUENCE")
         row = col.row(align=True)
         _op(row, OBJECT_OT_apply_checker_map.bl_idname, "Checker Map", "GRID_DOTS", "TEXTURE")
         _op(row, OBJECT_OT_cleanup_checker_map.bl_idname, "Cleanup All Checker Maps", "TRASH_X", "CANCEL")
@@ -662,7 +659,6 @@ classes = (
     OBJECT_OT_enable_backface_culling,
     OBJECT_OT_link_avatar_wearables,
     OBJECT_OT_particles_to_armature_converter,
-    OBJECT_OT_scene_limitations,
     OBJECT_OT_avatar_limitations,
     OBJECT_OT_replace_materials,
     OBJECT_OT_merge_materials,

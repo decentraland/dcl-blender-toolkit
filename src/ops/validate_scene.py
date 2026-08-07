@@ -156,5 +156,13 @@ class OBJECT_OT_validate_scene(bpy.types.Operator):
         else:
             col.label(text="Textures: All power-of-two", icon="CHECKMARK")
 
+        # File limits (informational, derived from parcel count)
+        layout.separator()
+        box = layout.box()
+        box.label(text="File Limits:", icon="FILE")
+        col = box.column(align=True)
+        col.label(text=f"File Size: {limits['total_file_size_mb']} MB")
+        col.label(text=f"Files: {limits['file_count']:,}")
+
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self, width=450)
