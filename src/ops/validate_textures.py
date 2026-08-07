@@ -4,7 +4,7 @@ import bpy
 class OBJECT_OT_validate_textures(bpy.types.Operator):
     bl_idname = "object.validate_textures"
     bl_label = "Validate Textures"
-    bl_description = "Check all textures for Decentraland/glTF compatibility (power-of-two, size, format)"
+    bl_description = "Check all textures for Decentraland/glTF compatibility (power-of-two, size, format, bit depth)"
     bl_options = {"REGISTER", "UNDO"}
 
     max_size: bpy.props.IntProperty(
@@ -46,6 +46,11 @@ class OBJECT_OT_validate_textures(bpy.types.Operator):
         # Non-square check
         if w != h:
             issues.append(("WARNING", f"Non-square ({w}x{h})"))
+
+        # Bit depth check: >8 bits/channel sources (16-bit PNG, EXR, HDR)
+        # load as float buffers in Blender
+        if image.is_float:
+            issues.append(("WARNING", "More than 8 bits/channel (16/32-bit source, use 8-bit)"))
 
         # Format check for glTF compatibility
         filepath = image.filepath.lower() if image.filepath else ""
