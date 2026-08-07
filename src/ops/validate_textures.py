@@ -112,7 +112,7 @@ class OBJECT_OT_validate_textures(bpy.types.Operator):
                 col = box.column(align=True)
                 col.label(text=f"{img.name} ({img.size[0]}x{img.size[1]})")
                 for level, msg in issues:
-                    icon = "ERROR" if level == "ERROR" else "WARNING"
+                    icon = "ERROR" if level == "ERROR" else "WARNING_LARGE"
                     col.label(text=f"    {msg}", icon=icon)
             if len(errored) > 15:
                 box.label(text=f"    ... and {len(errored) - 15} more")
@@ -120,12 +120,12 @@ class OBJECT_OT_validate_textures(bpy.types.Operator):
         # Warnings
         if warned:
             box = layout.box()
-            box.label(text=f"{len(warned)} texture(s) with warnings:", icon="WARNING")
+            box.label(text=f"{len(warned)} texture(s) with warnings:", icon="WARNING_LARGE")
             for img, issues in warned[:15]:
                 col = box.column(align=True)
                 col.label(text=f"{img.name} ({img.size[0]}x{img.size[1]})")
                 for _level, msg in issues:
-                    col.label(text=f"    {msg}", icon="WARNING")
+                    col.label(text=f"    {msg}", icon="WARNING_LARGE")
             if len(warned) > 15:
                 box.label(text=f"    ... and {len(warned) - 15} more")
 

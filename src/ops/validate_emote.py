@@ -200,7 +200,7 @@ class OBJECT_OT_validate_emote(bpy.types.Operator):
 
         if result.get("warnings"):
             box = layout.box()
-            box.label(text="Warnings", icon="WARNING")
+            box.label(text="Warnings", icon="WARNING_LARGE")
             for message in result["warnings"][:8]:
                 box.label(text=message)
             if len(result["warnings"]) > 8:

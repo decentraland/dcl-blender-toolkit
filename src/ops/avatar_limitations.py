@@ -203,7 +203,7 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
                 if pct >= 100:
                     return "ERROR"
                 elif pct >= 80:
-                    return "WARNING"
+                    return "WARNING_LARGE"
                 else:
                     return "CHECKMARK"
 

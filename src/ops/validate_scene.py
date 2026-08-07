@@ -128,7 +128,7 @@ class OBJECT_OT_validate_scene(bpy.types.Operator):
 
         # Transforms
         if transforms:
-            col.label(text=f"Non-applied transforms: {len(transforms)} object(s)", icon="WARNING")
+            col.label(text=f"Non-applied transforms: {len(transforms)} object(s)", icon="WARNING_LARGE")
             for name in transforms[:5]:
                 col.label(text=f"    {name}")
             if len(transforms) > 5:
@@ -138,7 +138,7 @@ class OBJECT_OT_validate_scene(bpy.types.Operator):
 
         # Missing materials
         if missing_mats:
-            col.label(text=f"Missing materials: {len(missing_mats)} object(s)", icon="WARNING")
+            col.label(text=f"Missing materials: {len(missing_mats)} object(s)", icon="WARNING_LARGE")
             for name in missing_mats[:5]:
                 col.label(text=f"    {name}")
             if len(missing_mats) > 5:
