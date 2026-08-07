@@ -146,15 +146,10 @@ class OBJECT_OT_validate_textures(bpy.types.Operator):
             if len(warned) > 15:
                 box.label(text=f"    ... and {len(warned) - 15} more")
 
-        # Passed
+        # Passed (names go to the console report only)
         if passed:
             box = layout.box()
-            box.label(text=f"{len(passed)} texture(s) OK:", icon="CHECKMARK")
-            col = box.column(align=True)
-            for img in passed[:15]:
-                col.label(text=f"    {img.name} ({img.size[0]}x{img.size[1]})")
-            if len(passed) > 15:
-                col.label(text=f"    ... and {len(passed) - 15} more")
+            box.label(text=f"{len(passed)} texture(s) OK", icon="CHECKMARK")
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self, width=450)
