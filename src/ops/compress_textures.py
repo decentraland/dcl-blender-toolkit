@@ -61,6 +61,14 @@ class OBJECT_OT_compress_textures(bpy.types.Operator):
         default=True,
     )
 
+    convert_to_8bit: bpy.props.BoolProperty(
+        name="Convert to 8 Bits/Channel",
+        description=(
+            "Re-encode high bit depth textures (16-bit PNG, EXR, HDR) down to 8 bits per channel as required by glTF"
+        ),
+        default=True,
+    )
+
     scope_all_textures: bpy.props.BoolProperty(
         name="All Textures",
         description="Compress all textures in the scene",
@@ -134,6 +142,11 @@ class OBJECT_OT_compress_textures(bpy.types.Operator):
                 bpy.context.scene.render.image_settings.quality = self.jpeg_quality
                 image.save_render(temp_path)
 
+                # A packed image reloads from its packed data, not from
+                # filepath - drop the old packed data first
+                if was_packed:
+                    image.unpack(method="REMOVE")
+
                 image.filepath = temp_path
                 image.file_format = "JPEG"
                 image.source = "FILE"
@@ -150,18 +163,27 @@ class OBJECT_OT_compress_textures(bpy.types.Operator):
                     pass
 
         elif target_format == "PNG":
-            if original_format == "PNG" and was_packed:
+            needs_8bit = self.convert_to_8bit and image.is_float
+            if original_format == "PNG" and was_packed and not needs_8bit:
                 return
 
             temp_path = os.path.join(tempfile.gettempdir(), f"dcl_compress_{image.name}.png")
 
             saved_format = bpy.context.scene.render.image_settings.file_format
             saved_compression = bpy.context.scene.render.image_settings.compression
+            saved_color_depth = bpy.context.scene.render.image_settings.color_depth
 
             try:
                 bpy.context.scene.render.image_settings.file_format = "PNG"
                 bpy.context.scene.render.image_settings.compression = 90
+                if self.convert_to_8bit:
+                    bpy.context.scene.render.image_settings.color_depth = "8"
                 image.save_render(temp_path)
+
+                # A packed image reloads from its packed data, not from
+                # filepath - drop the old packed data first
+                if was_packed:
+                    image.unpack(method="REMOVE")
 
                 image.filepath = temp_path
                 image.file_format = "PNG"
@@ -173,6 +195,7 @@ class OBJECT_OT_compress_textures(bpy.types.Operator):
             finally:
                 bpy.context.scene.render.image_settings.file_format = saved_format
                 bpy.context.scene.render.image_settings.compression = saved_compression
+                bpy.context.scene.render.image_settings.color_depth = saved_color_depth
                 try:
                     os.remove(temp_path)
                 except OSError:
@@ -189,9 +212,11 @@ class OBJECT_OT_compress_textures(bpy.types.Operator):
         compressed = 0
         jpeg_count = 0
         png_count = 0
+        bit_converted = 0
 
         for image in images:
             try:
+                was_float = image.is_float
                 fmt = self._choose_format(image)
                 self._compress_image(image, fmt)
                 compressed += 1
@@ -199,6 +224,8 @@ class OBJECT_OT_compress_textures(bpy.types.Operator):
                     jpeg_count += 1
                 else:
                     png_count += 1
+                if was_float and not image.is_float:
+                    bit_converted += 1
             except Exception as e:
                 self.report({"ERROR"}, f"Failed to compress '{image.name}': {e}")
 
@@ -207,6 +234,8 @@ class OBJECT_OT_compress_textures(bpy.types.Operator):
             parts.append(f"{jpeg_count} as JPEG")
         if png_count:
             parts.append(f"{png_count} as PNG")
+        if bit_converted:
+            parts.append(f"{bit_converted} converted to 8-bit")
         detail = ", ".join(parts)
 
         self.report({"INFO"}, f"Compressed {compressed} texture(s) ({detail})")
@@ -224,6 +253,8 @@ class OBJECT_OT_compress_textures(bpy.types.Operator):
         col = layout.column()
         col.enabled = self.texture_format == "AUTO"
         col.prop(self, "force_jpeg_no_alpha")
+
+        layout.prop(self, "convert_to_8bit")
 
         layout.separator()
         layout.prop(self, "scope_all_textures")
