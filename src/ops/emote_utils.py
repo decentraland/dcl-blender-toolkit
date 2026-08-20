@@ -1,5 +1,8 @@
 import re
 
+AVATAR_ROOT_BONE = "Avatar_Hips"
+PROP_ROOT_BONE = "Prop_Root"
+
 
 def sanitize_emote_name(raw_name):
     """Format input as Capitalized_Words with no special characters."""
@@ -35,6 +38,115 @@ def find_target_armature(context):
         if candidate.type == "ARMATURE":
             return candidate
     return None
+
+
+def is_avatar_armature(obj):
+    """True when the armature carries the Decentraland avatar bone hierarchy."""
+    if not obj or obj.type != "ARMATURE" or not obj.data:
+        return False
+    bones = obj.data.bones
+    if AVATAR_ROOT_BONE in bones:
+        return True
+    return any(bone.name.startswith("Avatar_") for bone in bones)
+
+
+def is_prop_armature(obj):
+    """True when the armature looks like an emote prop rig rather than the avatar rig."""
+    if not obj or obj.type != "ARMATURE" or not obj.data:
+        return False
+    return not is_avatar_armature(obj)
+
+
+def find_avatar_armature(context):
+    """
+    Find the avatar rig specifically, so having a prop armature active does not
+    make the prop stand in for the avatar.
+    Preference order mirrors find_target_armature, but only considers avatar rigs;
+    falls back to find_target_armature when no avatar rig is present.
+    """
+    obj = context.active_object
+    if is_avatar_armature(obj):
+        return obj
+
+    for candidate in context.selected_objects:
+        if is_avatar_armature(candidate):
+            return candidate
+
+    for candidate in context.scene.objects:
+        if is_avatar_armature(candidate):
+            return candidate
+
+    return find_target_armature(context)
+
+
+def find_prop_armatures(context, avatar_armature=None):
+    """Return every scene armature that is not the avatar rig."""
+    if avatar_armature is None:
+        avatar_armature = find_avatar_armature(context)
+    return [obj for obj in context.scene.objects if obj is not avatar_armature and is_prop_armature(obj)]
+
+
+def collect_armature_geometry(context, armature_obj):
+    """
+    Return objects driven by an armature: descendants of the armature object plus
+    anything carrying an Armature modifier pointing at it.
+    """
+    if not armature_obj:
+        return []
+
+    found = []
+    seen = {armature_obj.name}
+
+    def add(obj):
+        if obj.name in seen:
+            return
+        seen.add(obj.name)
+        found.append(obj)
+
+    def add_descendants(parent):
+        for obj in context.scene.objects:
+            if obj.parent is parent:
+                add(obj)
+                add_descendants(obj)
+
+    add_descendants(armature_obj)
+
+    for obj in context.scene.objects:
+        for modifier in getattr(obj, "modifiers", []):
+            if modifier.type == "ARMATURE" and modifier.object is armature_obj:
+                add(obj)
+
+    return found
+
+
+def collect_emote_export_objects(context, avatar_armature, prop_armatures=None):
+    """
+    Build the object set a Decentraland emote GLB must contain.
+
+    The avatar armature is exported on its own - the avatar body meshes come from
+    the wearer in-world, so only its bones and animation belong in the file. Prop
+    armatures are exported together with their geometry, which is the visible part
+    of a prop emote.
+    """
+    if prop_armatures is None:
+        prop_armatures = find_prop_armatures(context, avatar_armature)
+
+    objects = []
+    seen = set()
+
+    def add(obj):
+        if obj is None or obj.name in seen:
+            return
+        seen.add(obj.name)
+        objects.append(obj)
+
+    add(avatar_armature)
+    for prop_armature in prop_armatures:
+        add(prop_armature)
+        for obj in collect_armature_geometry(context, prop_armature):
+            add(obj)
+
+    return objects
 
 
 def get_deform_pose_bones(armature_obj):

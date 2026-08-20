@@ -2,7 +2,7 @@ import os
 
 import bpy
 
-from .emote_utils import find_target_armature
+from .emote_utils import collect_emote_export_objects, find_avatar_armature, find_prop_armatures
 from .validate_emote import run_emote_validation
 
 
@@ -28,10 +28,14 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
             self.report({"ERROR"}, "Strict mode enabled: resolve validation warnings before export.")
             return {"CANCELLED"}
 
-        armature = find_target_armature(context)
+        armature = find_avatar_armature(context)
         if not armature:
             self.report({"ERROR"}, "No armature found for export.")
             return {"CANCELLED"}
+
+        prop_armatures = find_prop_armatures(context, armature)
+        export_objects = collect_emote_export_objects(context, armature, prop_armatures)
+        export_names = {obj.name for obj in export_objects}
 
         out_path = self.filepath.strip()
         if not out_path:
@@ -53,14 +57,14 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
         original_frame = context.scene.frame_current
 
         try:
-            # Keep only armature visible/selected for safer export content.
+            # Keep only the emote content visible/selected: the avatar armature plus
+            # any prop armatures and their geometry.
             for obj in context.scene.objects:
                 visibility_cache[obj.name] = obj.hide_viewport
-                obj.hide_viewport = obj != armature
-                obj.select_set(False)
+                in_export = obj.name in export_names
+                obj.hide_viewport = not in_export
+                obj.select_set(in_export)
 
-            armature.hide_viewport = False
-            armature.select_set(True)
             context.view_layer.objects.active = armature
 
             context.scene.frame_start = start_frame
@@ -121,10 +125,17 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
 
         file_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
         size_mb = file_size / (1024 * 1024) if file_size else 0.0
+        prop_note = ""
+        if prop_armatures:
+            prop_objects = len(export_objects) - 1 - len(prop_armatures)
+            prop_note = f" Included {len(prop_armatures)} prop rig(s) with {prop_objects} object(s)."
         if file_size > 1024 * 1024:
-            self.report({"WARNING"}, f"Exported {out_path} ({size_mb:.2f} MB). DCL recommends <= 1 MB.")
+            self.report(
+                {"WARNING"},
+                f"Exported {out_path} ({size_mb:.2f} MB). DCL recommends <= 1 MB.{prop_note}",
+            )
         else:
-            self.report({"INFO"}, f"Exported {out_path} ({size_mb:.2f} MB).")
+            self.report({"INFO"}, f"Exported {out_path} ({size_mb:.2f} MB).{prop_note}")
         return {"FINISHED"}
 
     def invoke(self, context, event):
