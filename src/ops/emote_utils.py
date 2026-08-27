@@ -215,6 +215,42 @@ def restore_names(cache):
         obj.name = original_name
 
 
+def prepare_view_layer_for_export(view_layer, export_objects):
+    """
+    Make every collection on the path to an export object available: excluded
+    collections crash select_set ("not in View Layer") and hidden ones silently
+    drop their objects from a use_visible export. Returns an undo list for
+    restore_view_layer_state.
+    """
+    undo = []
+    export_names = {obj.name for obj in export_objects}
+
+    def set_flag(owner, attr, value):
+        if getattr(owner, attr, value) != value:
+            undo.append((owner, attr, getattr(owner, attr)))
+            setattr(owner, attr, value)
+
+    def walk(layer_collection):
+        contained = {obj.name for obj in layer_collection.collection.all_objects}
+        if not contained & export_names:
+            return
+        set_flag(layer_collection, "exclude", False)
+        set_flag(layer_collection, "hide_viewport", False)
+        set_flag(layer_collection.collection, "hide_viewport", False)
+        for child in layer_collection.children:
+            walk(child)
+
+    # The master collection can't be excluded or hidden; walk its children.
+    for child in view_layer.layer_collection.children:
+        walk(child)
+    return undo
+
+
+def restore_view_layer_state(undo):
+    for owner, attr, value in reversed(undo):
+        setattr(owner, attr, value)
+
+
 def get_deform_pose_bones(armature_obj):
     """Return deform pose bones, falling back to all pose bones."""
     if not armature_obj or armature_obj.type != "ARMATURE" or not armature_obj.pose:

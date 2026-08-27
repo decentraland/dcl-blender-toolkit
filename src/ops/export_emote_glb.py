@@ -8,8 +8,10 @@ from .emote_utils import (
     find_avatar_armature,
     find_prop_armatures,
     mute_armature_nla_strips,
+    prepare_view_layer_for_export,
     restore_names,
     restore_nla_mutes,
+    restore_view_layer_state,
 )
 from .validate_emote import run_emote_validation
 
@@ -65,14 +67,36 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
         original_frame = context.scene.frame_current
         nla_mute_cache = []
         rename_cache = []
+        view_layer_undo = []
+        hide_cache = []
+        selectable_names = set()
 
         try:
+            # Excluded or hidden collections would crash select_set below or
+            # silently drop their objects from the export.
+            view_layer_undo = prepare_view_layer_for_export(context.view_layer, export_objects)
+            context.view_layer.update()
+            selectable_names = {obj.name for obj in context.view_layer.objects}
+
+            missing = sorted(export_names - selectable_names)
+            if missing:
+                self.report(
+                    {"ERROR"},
+                    "Cannot export, not in the current view layer: " + ", ".join(missing),
+                )
+                return {"CANCELLED"}
+
             # Keep only the emote content visible/selected: the avatar armature plus
             # any prop armatures and their geometry.
             for obj in context.scene.objects:
                 visibility_cache[obj.name] = obj.hide_viewport
                 in_export = obj.name in export_names
                 obj.hide_viewport = not in_export
+                if obj.name not in selectable_names:
+                    continue
+                if in_export and obj.hide_get():
+                    hide_cache.append(obj)
+                    obj.hide_set(False)
                 obj.select_set(in_export)
 
             context.view_layer.objects.active = armature
@@ -132,19 +156,24 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
             # Names first: the caches below are keyed by pre-export names.
             restore_names(rename_cache)
             restore_nla_mutes(nla_mute_cache)
+            for obj in hide_cache:
+                obj.hide_set(True)
 
-            # Restore viewport visibility and selection.
+            # Restore viewport visibility and selection while the view layer
+            # still holds everything we selected.
             for obj in context.scene.objects:
                 if obj.name in visibility_cache:
                     obj.hide_viewport = visibility_cache[obj.name]
-                obj.select_set(False)
+                if obj.name in selectable_names:
+                    obj.select_set(False)
 
             for obj in selection_cache:
-                if obj and obj.name in bpy.data.objects:
+                if obj and obj.name in bpy.data.objects and obj.name in selectable_names:
                     bpy.data.objects[obj.name].select_set(True)
             if active_cache and active_cache.name in bpy.data.objects:
                 context.view_layer.objects.active = bpy.data.objects[active_cache.name]
             context.scene.frame_set(original_frame)
+            restore_view_layer_state(view_layer_undo)
 
         file_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
         size_mb = file_size / (1024 * 1024) if file_size else 0.0

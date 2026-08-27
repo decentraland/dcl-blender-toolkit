@@ -160,6 +160,18 @@ assign_action(prop, "Gamer_Prop", "Prop_Root")
 
 bpy.context.view_layer.objects.active = avatar
 
+# The prop lives in a collection that is excluded from the view layer - the
+# exact setup that crashed select_set in the field - and the avatar rig is
+# hidden, which a use_visible export would silently drop.
+props_collection = bpy.data.collections.new("Props")
+scene.collection.children.link(props_collection)
+for obj in (prop, prop_mesh):
+    scene.collection.objects.unlink(obj)
+    props_collection.objects.link(obj)
+props_layer = bpy.context.view_layer.layer_collection.children["Props"]
+props_layer.exclude = True
+avatar.hide_set(True)
+
 # ---------------------------------------------------------------------------
 # Export 1: prop emote
 # ---------------------------------------------------------------------------
@@ -187,6 +199,9 @@ check("prop geometry is in the GLB", any(m.get("name") == "Space_Gun" for m in g
 check("avatar rig name restored", avatar.name == "Armature.001", avatar.name)
 check("prop rig name restored", prop.name == "Gun_Rig", prop.name)
 check("reference object name restored", reference.name == "Armature", reference.name)
+check("prop collection exclusion restored", props_layer.exclude)
+check("avatar hide state restored", avatar.hide_get())
+avatar.hide_set(False)
 check(
     "NLA strips unmuted after export",
     not any(s.mute for rig in (avatar, prop) for t in rig.animation_data.nla_tracks for s in t.strips),
