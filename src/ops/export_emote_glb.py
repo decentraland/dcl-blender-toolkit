@@ -2,7 +2,15 @@ import os
 
 import bpy
 
-from .emote_utils import collect_emote_export_objects, find_avatar_armature, find_prop_armatures
+from .emote_utils import (
+    claim_export_names,
+    collect_emote_export_objects,
+    find_avatar_armature,
+    find_prop_armatures,
+    mute_armature_nla_strips,
+    restore_names,
+    restore_nla_mutes,
+)
 from .validate_emote import run_emote_validation
 
 
@@ -55,6 +63,8 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
         selection_cache = list(context.selected_objects)
         active_cache = context.view_layer.objects.active
         original_frame = context.scene.frame_current
+        nla_mute_cache = []
+        rename_cache = []
 
         try:
             # Keep only the emote content visible/selected: the avatar armature plus
@@ -66,6 +76,11 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
                 obj.select_set(in_export)
 
             context.view_layer.objects.active = armature
+
+            # Only the active action of each rig may become a clip; anything
+            # parked on NLA tracks (stashes, other emotes) must not leak in.
+            nla_mute_cache = mute_armature_nla_strips([armature, *prop_armatures])
+            rename_cache = claim_export_names(armature, prop_armatures, bpy.data.objects.get)
 
             context.scene.frame_start = start_frame
             context.scene.frame_end = end_frame
@@ -82,6 +97,9 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
                     "export_frame_step": frame_step,
                     "export_frame_range": True,
                     "export_animations": True,
+                    # With a single armature the exporter would otherwise emit
+                    # every action in the file, not just the active one.
+                    "export_anim_single_armature": False,
                     "export_apply": False,
                 },
                 {
@@ -89,6 +107,7 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
                     "export_format": "GLB",
                     "use_selection": True,
                     "export_animations": True,
+                    "export_anim_single_armature": False,
                     "export_apply": False,
                 },
                 {
@@ -110,6 +129,10 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
                 self.report({"ERROR"}, f"Export failed: {last_error}")
                 return {"CANCELLED"}
         finally:
+            # Names first: the caches below are keyed by pre-export names.
+            restore_names(rename_cache)
+            restore_nla_mutes(nla_mute_cache)
+
             # Restore viewport visibility and selection.
             for obj in context.scene.objects:
                 if obj.name in visibility_cache:

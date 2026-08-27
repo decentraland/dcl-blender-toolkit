@@ -3,6 +3,10 @@ import re
 AVATAR_ROOT_BONE = "Avatar_Hips"
 PROP_ROOT_BONE = "Prop_Root"
 
+# Armature object names Decentraland expects inside an emote GLB.
+AVATAR_EXPORT_NAME = "Armature"
+PROP_EXPORT_NAME = "Armature_Prop"
+
 
 def sanitize_emote_name(raw_name):
     """Format input as Capitalized_Words with no special characters."""
@@ -147,6 +151,68 @@ def collect_emote_export_objects(context, avatar_armature, prop_armatures=None):
             add(obj)
 
     return objects
+
+
+def mute_armature_nla_strips(armatures):
+    """
+    Mute every NLA strip on the given rigs so only their active actions become
+    GLB animations. Stashed or parked actions (other emotes, WIP takes) would
+    otherwise export as extra clips. Returns (strip, previous_mute) pairs for
+    restore_nla_mutes.
+    """
+    cache = []
+    for rig in armatures:
+        animation_data = getattr(rig, "animation_data", None)
+        if not animation_data:
+            continue
+        for track in getattr(animation_data, "nla_tracks", None) or []:
+            for strip in getattr(track, "strips", None) or []:
+                cache.append((strip, strip.mute))
+                strip.mute = True
+    return cache
+
+
+def restore_nla_mutes(cache):
+    for strip, was_muted in cache:
+        strip.mute = was_muted
+
+
+def claim_export_names(avatar_armature, prop_armatures, find_object):
+    """
+    Give the exported rigs the object names Decentraland expects in the GLB:
+    'Armature' for the avatar and 'Armature_Prop' for a single prop rig. An
+    object already holding the name (typically a reference rig) is parked
+    under a temporary name so ours doesn't get auto-suffixed to 'Armature.001'.
+    find_object resolves a name to the object holding it (bpy.data.objects.get).
+    Returns (object, original_name) pairs; undo with restore_names.
+    """
+    cache = []
+
+    def claim(obj, name):
+        if obj is None or obj.name == name:
+            return
+        if getattr(obj, "library", None) is not None:
+            return
+        holder = find_object(name)
+        if holder is not None and holder is not obj:
+            # Linked (library) objects can't be renamed; leave everything as is
+            # rather than exporting under an auto-suffixed name anyway.
+            if getattr(holder, "library", None) is not None:
+                return
+            cache.append((holder, holder.name))
+            holder.name = f"{name}.dclexport"
+        cache.append((obj, obj.name))
+        obj.name = name
+
+    claim(avatar_armature, AVATAR_EXPORT_NAME)
+    if len(prop_armatures) == 1:
+        claim(prop_armatures[0], PROP_EXPORT_NAME)
+    return cache
+
+
+def restore_names(cache):
+    for obj, original_name in reversed(cache):
+        obj.name = original_name
 
 
 def get_deform_pose_bones(armature_obj):
