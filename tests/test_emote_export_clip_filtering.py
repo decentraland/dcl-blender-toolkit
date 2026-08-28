@@ -137,6 +137,96 @@ class TestExportNames:
         assert avatar.name == "Armature.001"
 
 
+class FakeFCurve:
+    def __init__(self, data_path):
+        self.data_path = data_path
+
+
+class FakeAction:
+    def __init__(self, name, bone_names=()):
+        self.name = name
+        self.fcurves = [FakeFCurve(f'pose.bones["{bone}"].location') for bone in bone_names]
+
+
+class FakePoseBone:
+    def __init__(self, name):
+        self.name = name
+
+
+class FakePose:
+    def __init__(self, bone_names):
+        self.bones = [FakePoseBone(name) for name in bone_names]
+
+
+class FakeAnimatedRig:
+    def __init__(self, name, bone_names, active_action=None):
+        self.name = name
+        self.pose = FakePose(bone_names)
+        self.animation_data = type("FakeAnimData", (), {"action": active_action})() if active_action else None
+
+
+def _two_emote_scene():
+    """A file holding two emotes, each with its own prop rig."""
+    avatar = FakeAnimatedRig("Armature", ["Avatar_Hips"], FakeAction("Invaders_Avatar"))
+    tv_rig = FakeAnimatedRig("Armature_Prop", ["GameSet_Root"], FakeAction("Gamer_Prop", ["GameSet_Root"]))
+    gun_rig = FakeAnimatedRig("Armature_Prop.001", ["Prop_Root"])
+    actions = [
+        FakeAction("Gamer_Avatar", ["Avatar_Hips"]),
+        FakeAction("Gamer_Prop", ["GameSet_Root"]),
+        FakeAction("Invaders_Avatar", ["Avatar_Hips"]),
+        FakeAction("Invaders_Prop", ["Prop_Root"]),
+    ]
+    return avatar, tv_rig, gun_rig, actions
+
+
+class TestPropActionPairing:
+    def test_parked_prop_action_is_paired_by_name_and_bones(self):
+        avatar, tv_rig, gun_rig, actions = _two_emote_scene()
+        selected, assignments = emote_utils.pair_prop_actions(avatar, [tv_rig, gun_rig], actions)
+        assert selected == [gun_rig], "only the rig whose action pairs with Invaders_Avatar"
+        assert len(assignments) == 1
+        rig, action, previous = assignments[0]
+        assert rig is gun_rig
+        assert action.name == "Invaders_Prop"
+        assert previous is None
+
+    def test_other_emotes_prop_rig_is_excluded(self):
+        avatar, tv_rig, gun_rig, actions = _two_emote_scene()
+        selected, _ = emote_utils.pair_prop_actions(avatar, [tv_rig, gun_rig], actions)
+        assert tv_rig not in selected, "Gamer's prop must not export with the Invaders emote"
+
+    def test_already_active_paired_action_needs_no_assignment(self):
+        avatar, _, gun_rig, actions = _two_emote_scene()
+        gun_rig.animation_data = type("FakeAnimData", (), {"action": actions[3]})()
+        selected, assignments = emote_utils.pair_prop_actions(avatar, [gun_rig], actions)
+        assert selected == [gun_rig]
+        assert assignments == []
+
+    def test_pairing_is_case_insensitive(self):
+        avatar = FakeAnimatedRig("Armature", ["Avatar_Hips"], FakeAction("Invaders_avatar"))
+        gun_rig = FakeAnimatedRig("Gun", ["Prop_Root"])
+        actions = [FakeAction("INVADERS_PROP", ["Prop_Root"])]
+        selected, assignments = emote_utils.pair_prop_actions(avatar, [gun_rig], actions)
+        assert selected == [gun_rig]
+        assert len(assignments) == 1
+
+    def test_without_naming_convention_animated_rigs_export(self):
+        avatar = FakeAnimatedRig("Armature", ["Avatar_Hips"], FakeAction("MyDance"))
+        animated = FakeAnimatedRig("Gun", ["Prop_Root"], FakeAction("GunAction", ["Prop_Root"]))
+        static = FakeAnimatedRig("Crate", ["Crate_Root"])
+        selected, assignments = emote_utils.pair_prop_actions(avatar, [animated, static], [])
+        assert selected == [animated]
+        assert assignments == []
+
+    def test_prop_action_bound_to_wrong_bones_is_not_paired(self):
+        avatar = FakeAnimatedRig("Armature", ["Avatar_Hips"], FakeAction("Invaders_Avatar"))
+        tv_rig = FakeAnimatedRig("TV", ["GameSet_Root"])
+        actions = [FakeAction("Invaders_Prop", ["Prop_Root"])]
+        selected, assignments = emote_utils.pair_prop_actions(avatar, [tv_rig], actions)
+        assert selected == []
+        assert assignments == []
+
+
 class TestExporterWiring:
     def test_exporter_disables_the_all_actions_fallback(self):
         src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
@@ -148,3 +238,9 @@ class TestExporterWiring:
         assert "claim_export_names" in src
         assert "restore_nla_mutes" in src
         assert "restore_names" in src
+
+    def test_exporter_pairs_prop_rigs_to_the_active_emote(self):
+        src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        assert "pair_prop_actions" in src
+        assert "apply_action_assignments" in src
+        assert "restore_action_assignments" in src

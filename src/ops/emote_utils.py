@@ -153,6 +153,85 @@ def collect_emote_export_objects(context, avatar_armature, prop_armatures=None):
     return objects
 
 
+def action_matches_armature(action, bone_names):
+    """True when the action animates at least one of the given pose bones."""
+    if not action:
+        return False
+    for fcurve in iter_action_fcurves(action):
+        if not fcurve.data_path.startswith('pose.bones["'):
+            continue
+        for bone_name in bone_names:
+            if f'pose.bones["{bone_name}"]' in fcurve.data_path:
+                return True
+    return False
+
+
+def get_active_action(obj):
+    animation_data = getattr(obj, "animation_data", None)
+    return animation_data.action if animation_data and animation_data.action else None
+
+
+def emote_name_from_action(action_name):
+    """'Invaders_Avatar' -> 'Invaders'; None when the suffix convention isn't followed."""
+    if action_name and action_name.lower().endswith("_avatar"):
+        return action_name[: -len("_avatar")]
+    return None
+
+
+def pair_prop_actions(avatar_armature, prop_armatures, actions):
+    """
+    Decide which prop rigs belong to the emote being exported, and which action
+    drives each. A file can hold several emotes, each with its own prop rig;
+    the pair is named after the avatar's active action ('X_Avatar' pairs with
+    'X_Prop'). When the paired action exists but isn't the rig's active action,
+    it is scheduled for temporary assignment during the export.
+
+    Returns (selected_rigs, assignments) with assignments as
+    (rig, action_to_assign, previous_action) tuples for apply/restore.
+    Without the naming convention on the avatar action, falls back to every
+    prop rig that has an active action.
+    """
+    emote = emote_name_from_action(getattr(get_active_action(avatar_armature), "name", None))
+    if emote is None:
+        return [rig for rig in prop_armatures if get_active_action(rig) is not None], []
+
+    expected = f"{emote}_Prop".lower()
+    selected = []
+    assignments = []
+    for rig in prop_armatures:
+        active = get_active_action(rig)
+        if active is not None and active.name.lower() == expected:
+            selected.append(rig)
+            continue
+        pose = getattr(rig, "pose", None)
+        bone_names = {bone.name for bone in pose.bones} if pose else set()
+        for action in actions:
+            if action.name.lower() == expected and action_matches_armature(action, bone_names):
+                selected.append(rig)
+                assignments.append((rig, action, active))
+                break
+    return selected, assignments
+
+
+def apply_action_assignments(assignments):
+    for rig, action, _previous in assignments:
+        if not rig.animation_data:
+            rig.animation_data_create()
+        rig.animation_data.action = action
+        # Blender 5 slotted actions: the exporter skips rigs with no action slot.
+        slots = getattr(action, "slots", None)
+        if slots and getattr(rig.animation_data, "action_slot", None) is None:
+            try:
+                rig.animation_data.action_slot = slots[0]
+            except Exception:
+                pass
+
+
+def restore_action_assignments(assignments):
+    for rig, _action, previous in assignments:
+        rig.animation_data.action = previous
+
+
 def mute_armature_nla_strips(armatures):
     """
     Mute every NLA strip on the given rigs so only their active actions become

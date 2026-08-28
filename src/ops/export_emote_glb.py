@@ -3,12 +3,15 @@ import os
 import bpy
 
 from .emote_utils import (
+    apply_action_assignments,
     claim_export_names,
     collect_emote_export_objects,
     find_avatar_armature,
     find_prop_armatures,
     mute_armature_nla_strips,
+    pair_prop_actions,
     prepare_view_layer_for_export,
+    restore_action_assignments,
     restore_names,
     restore_nla_mutes,
     restore_view_layer_state,
@@ -43,7 +46,10 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
             self.report({"ERROR"}, "No armature found for export.")
             return {"CANCELLED"}
 
-        prop_armatures = find_prop_armatures(context, armature)
+        # Only the prop rigs whose action pairs with the emote being exported:
+        # other emotes' props authored in the same file must stay out.
+        all_prop_armatures = find_prop_armatures(context, armature)
+        prop_armatures, action_assignments = pair_prop_actions(armature, all_prop_armatures, bpy.data.actions)
         export_objects = collect_emote_export_objects(context, armature, prop_armatures)
         export_names = {obj.name for obj in export_objects}
 
@@ -103,6 +109,7 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
 
             # Only the active action of each rig may become a clip; anything
             # parked on NLA tracks (stashes, other emotes) must not leak in.
+            apply_action_assignments(action_assignments)
             nla_mute_cache = mute_armature_nla_strips([armature, *prop_armatures])
             rename_cache = claim_export_names(armature, prop_armatures, bpy.data.objects.get)
 
@@ -156,6 +163,7 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
             # Names first: the caches below are keyed by pre-export names.
             restore_names(rename_cache)
             restore_nla_mutes(nla_mute_cache)
+            restore_action_assignments(action_assignments)
             for obj in hide_cache:
                 obj.hide_set(True)
 
@@ -181,6 +189,9 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
         if prop_armatures:
             prop_objects = len(export_objects) - 1 - len(prop_armatures)
             prop_note = f" Included {len(prop_armatures)} prop rig(s) with {prop_objects} object(s)."
+        skipped = len(all_prop_armatures) - len(prop_armatures)
+        if skipped:
+            prop_note += f" Skipped {skipped} prop rig(s) not paired with this emote."
         if file_size > 1024 * 1024:
             self.report(
                 {"WARNING"},

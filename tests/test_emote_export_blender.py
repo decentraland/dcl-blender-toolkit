@@ -154,9 +154,20 @@ invaders_avatar = assign_action(avatar, "Invaders_Avatar", "Avatar_Hips")
 park_on_nla(avatar, invaders_avatar)
 assign_action(avatar, "Gamer_Avatar", "Avatar_Hips")
 
-invaders_prop = assign_action(prop, "Invaders_Prop", "Prop_Root")
-park_on_nla(prop, invaders_prop)
+# Gamer's prop action exists in the file but is parked - not the rig's active
+# action - so the exporter must pair it by name and assign it on its own.
 assign_action(prop, "Gamer_Prop", "Prop_Root")
+prop.animation_data.action = None
+
+# The other emote's prop rig, with its own geometry and active action,
+# must stay out of the Gamer export.
+tv_rig = make_armature("TV_Rig", ["GameSet_Root"])
+tv_mesh_data = bpy.data.meshes.new("TV_Set")
+tv_mesh_data.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+tv_mesh = bpy.data.objects.new("TV_Set", tv_mesh_data)
+tv_mesh.parent = tv_rig
+scene.collection.objects.link(tv_mesh)
+assign_action(tv_rig, "Invaders_Prop", "GameSet_Root")
 
 bpy.context.view_layer.objects.active = avatar
 
@@ -195,6 +206,9 @@ check(
     str(scene_root_names(gltf)),
 )
 check("prop geometry is in the GLB", any(m.get("name") == "Space_Gun" for m in gltf.get("meshes", [])))
+node_names = {node.get("name") for node in gltf.get("nodes", [])}
+check("other emote's prop rig stays out", not {"TV_Rig", "TV_Set"} & node_names, str(node_names))
+check("gun rig active action restored to parked", prop.animation_data.action is None)
 
 check("avatar rig name restored", avatar.name == "Armature.001", avatar.name)
 check("prop rig name restored", prop.name == "Gun_Rig", prop.name)
@@ -213,6 +227,8 @@ check(
 
 bpy.data.objects.remove(prop_mesh)
 bpy.data.objects.remove(prop)
+bpy.data.objects.remove(tv_mesh)
+bpy.data.objects.remove(tv_rig)
 bpy.context.view_layer.objects.active = avatar
 
 basic_glb = os.path.join(out_dir, "basic_emote.glb")

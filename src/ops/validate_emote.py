@@ -3,26 +3,16 @@ import math
 import bpy
 
 from .emote_utils import (
+    action_matches_armature,
     collect_armature_geometry,
     find_avatar_armature,
     find_prop_armatures,
+    get_active_action,
     get_deform_pose_bones,
-    iter_action_fcurves,
     keyframe_exists,
+    pair_prop_actions,
     pose_bone_world_location,
 )
-
-
-def _action_matches_armature(action, bone_names):
-    if not action:
-        return False
-    for fcurve in iter_action_fcurves(action):
-        if not fcurve.data_path.startswith('pose.bones["'):
-            continue
-        for bone_name in bone_names:
-            if f'pose.bones["{bone_name}"]' in fcurve.data_path:
-                return True
-    return False
 
 
 def _missing_boundary_channels(action, pose_bones, start_frame, end_frame):
@@ -98,13 +88,11 @@ def run_emote_validation(context):
     action = armature.animation_data.action
     result["metrics"]["active_action"] = action.name
 
+    # Multiple armature actions are fine - the export only carries the active
+    # one - so their count is informational.
     arm_bone_names = {pb.name for pb in armature.pose.bones}
-    armature_actions = [a for a in bpy.data.actions if _action_matches_armature(a, arm_bone_names)]
+    armature_actions = [a for a in bpy.data.actions if action_matches_armature(a, arm_bone_names)]
     result["metrics"]["armature_action_count"] = len(armature_actions)
-
-    if len(armature_actions) != 1:
-        message = f"Detected {len(armature_actions)} armature actions. Keep only one final emote action before export."
-        push(message, is_error=strict_mode)
 
     # Boundary keyframes for deform bones.
     deform_bones = get_deform_pose_bones(armature)
@@ -119,10 +107,25 @@ def run_emote_validation(context):
         )
 
     # Prop rigs: geometry and animation live on their own armature, so they need
-    # the same checks as the avatar rig.
-    prop_armatures = find_prop_armatures(context, armature)
+    # the same checks as the avatar rig. Only rigs whose action pairs with the
+    # avatar's active action ('X_Avatar' / 'X_Prop') are exported.
+    all_prop_armatures = find_prop_armatures(context, armature)
+    prop_armatures, action_assignments = pair_prop_actions(armature, all_prop_armatures, bpy.data.actions)
+    assigned_actions = {rig.name: assigned for rig, assigned, _previous in action_assignments}
     result["prop_armatures"] = prop_armatures
     result["metrics"]["prop_armature_count"] = len(prop_armatures)
+    result["metrics"]["prop_armatures_skipped"] = len(all_prop_armatures) - len(prop_armatures)
+
+    for skipped_rig in all_prop_armatures:
+        if skipped_rig not in prop_armatures:
+            push(
+                f"Prop rig '{skipped_rig.name}' will not be exported: no action pairs with "
+                f"'{action.name}'. Name the prop action after the avatar action "
+                "('X_Avatar' pairs with 'X_Prop') or assign it as the rig's active action.",
+            )
+
+    if len(prop_armatures) > 1:
+        push("Multiple prop rigs pair with this emote; Decentraland emotes support a single prop rig.")
 
     prop_object_total = 0
     for prop_armature in prop_armatures:
@@ -133,12 +136,7 @@ def run_emote_validation(context):
                 f"Prop rig '{prop_armature.name}' has no mesh geometry; the prop will be invisible in-world.",
             )
 
-        prop_action = prop_armature.animation_data.action if prop_armature.animation_data else None
-        if prop_action is None:
-            push(
-                f"Prop rig '{prop_armature.name}' has no active action; the prop will not follow the avatar.",
-            )
-            continue
+        prop_action = assigned_actions.get(prop_armature.name) or get_active_action(prop_armature)
 
         if not prop_action.name.endswith("_Prop"):
             push(
