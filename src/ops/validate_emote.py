@@ -3,24 +3,35 @@ import math
 import bpy
 
 from .emote_utils import (
-    find_target_armature,
+    action_matches_armature,
+    collect_armature_geometry,
+    find_avatar_armature,
+    find_prop_armatures,
+    get_active_action,
     get_deform_pose_bones,
-    iter_action_fcurves,
     keyframe_exists,
+    pair_prop_actions,
     pose_bone_world_location,
 )
 
 
-def _action_matches_armature(action, bone_names):
-    if not action:
-        return False
-    for fcurve in iter_action_fcurves(action):
-        if not fcurve.data_path.startswith('pose.bones["'):
-            continue
-        for bone_name in bone_names:
-            if f'pose.bones["{bone_name}"]' in fcurve.data_path:
-                return True
-    return False
+def _missing_boundary_channels(action, pose_bones, start_frame, end_frame):
+    """Return "bone:channel" entries lacking a key on the first or last emote frame."""
+    missing = []
+    for pose_bone in pose_bones:
+        base = f'pose.bones["{pose_bone.name}"]'
+        channels = [f"{base}.location", f"{base}.scale"]
+        if pose_bone.rotation_mode == "QUATERNION":
+            channels.append(f"{base}.rotation_quaternion")
+        elif pose_bone.rotation_mode == "AXIS_ANGLE":
+            channels.append(f"{base}.rotation_axis_angle")
+        else:
+            channels.append(f"{base}.rotation_euler")
+
+        for channel in channels:
+            if not keyframe_exists(action, channel, start_frame) or not keyframe_exists(action, channel, end_frame):
+                missing.append(f"{pose_bone.name}:{channel.split('.')[-1]}")
+    return missing
 
 
 def run_emote_validation(context):
@@ -28,9 +39,10 @@ def run_emote_validation(context):
     Validate current emote configuration.
     Returns: dict(errors=[], warnings=[], info=[], metrics={...}, armature=obj_or_none)
     """
-    strict_mode = bool(getattr(context.scene, "dcl_emote_strict_validation", False))
-    start_frame = int(getattr(context.scene, "dcl_emote_start_frame", 1))
-    end_frame = int(getattr(context.scene, "dcl_emote_end_frame", 300))
+    props = context.scene.dcl_tools
+    strict_mode = bool(props.emote_strict_validation)
+    start_frame = int(props.emote_start_frame)
+    end_frame = int(props.emote_end_frame)
 
     result = {
         "errors": [],
@@ -38,6 +50,7 @@ def run_emote_validation(context):
         "info": [],
         "metrics": {},
         "armature": None,
+        "prop_armatures": [],
     }
 
     def push(message, is_error=False):
@@ -62,7 +75,7 @@ def run_emote_validation(context):
         push(f"Animation length is {length_frames} frames; max is 300 frames.", is_error=True)
 
     # Armature/action constraints.
-    armature = find_target_armature(context)
+    armature = find_avatar_armature(context)
     result["armature"] = armature
     if not armature:
         push("No armature found. Import/select DCL rig before validating.", is_error=True)
@@ -75,30 +88,15 @@ def run_emote_validation(context):
     action = armature.animation_data.action
     result["metrics"]["active_action"] = action.name
 
+    # Multiple armature actions are fine - the export only carries the active
+    # one - so their count is informational.
     arm_bone_names = {pb.name for pb in armature.pose.bones}
-    armature_actions = [a for a in bpy.data.actions if _action_matches_armature(a, arm_bone_names)]
+    armature_actions = [a for a in bpy.data.actions if action_matches_armature(a, arm_bone_names)]
     result["metrics"]["armature_action_count"] = len(armature_actions)
-
-    if len(armature_actions) != 1:
-        message = f"Detected {len(armature_actions)} armature actions. Keep only one final emote action before export."
-        push(message, is_error=strict_mode)
 
     # Boundary keyframes for deform bones.
     deform_bones = get_deform_pose_bones(armature)
-    missing_boundary = []
-    for pose_bone in deform_bones:
-        base = f'pose.bones["{pose_bone.name}"]'
-        channels = [f"{base}.location", f"{base}.scale"]
-        if pose_bone.rotation_mode == "QUATERNION":
-            channels.append(f"{base}.rotation_quaternion")
-        elif pose_bone.rotation_mode == "AXIS_ANGLE":
-            channels.append(f"{base}.rotation_axis_angle")
-        else:
-            channels.append(f"{base}.rotation_euler")
-
-        for channel in channels:
-            if not keyframe_exists(action, channel, start_frame) or not keyframe_exists(action, channel, end_frame):
-                missing_boundary.append(f"{pose_bone.name}:{channel.split('.')[-1]}")
+    missing_boundary = _missing_boundary_channels(action, deform_bones, start_frame, end_frame)
 
     result["metrics"]["deform_bone_count"] = len(deform_bones)
     if missing_boundary:
@@ -106,6 +104,61 @@ def run_emote_validation(context):
             f"Missing first/last-frame keys on {len(missing_boundary)} bone channels. "
             "Set first and last frame keys on deform channels to prevent emote overrides.",
             is_error=strict_mode,
+        )
+
+    # Prop rigs: geometry and animation live on their own armature, so they need
+    # the same checks as the avatar rig. Only rigs whose action pairs with the
+    # avatar's active action ('X_Avatar' / 'X_Prop') are exported.
+    all_prop_armatures = find_prop_armatures(context, armature)
+    prop_armatures, action_assignments = pair_prop_actions(armature, all_prop_armatures, bpy.data.actions)
+    assigned_actions = {rig.name: assigned for rig, assigned, _previous in action_assignments}
+    result["prop_armatures"] = prop_armatures
+    result["metrics"]["prop_armature_count"] = len(prop_armatures)
+    result["metrics"]["prop_armatures_skipped"] = len(all_prop_armatures) - len(prop_armatures)
+
+    for skipped_rig in all_prop_armatures:
+        if skipped_rig not in prop_armatures:
+            push(
+                f"Prop rig '{skipped_rig.name}' will not be exported: no action pairs with "
+                f"'{action.name}'. Name the prop action after the avatar action "
+                "('X_Avatar' pairs with 'X_Prop') or assign it as the rig's active action.",
+            )
+
+    if len(prop_armatures) > 1:
+        push("Multiple prop rigs pair with this emote; Decentraland emotes support a single prop rig.")
+
+    prop_object_total = 0
+    for prop_armature in prop_armatures:
+        geometry = [obj for obj in collect_armature_geometry(context, prop_armature) if obj.type == "MESH"]
+        prop_object_total += len(geometry)
+        if not geometry:
+            push(
+                f"Prop rig '{prop_armature.name}' has no mesh geometry; the prop will be invisible in-world.",
+            )
+
+        prop_action = assigned_actions.get(prop_armature.name) or get_active_action(prop_armature)
+
+        if not prop_action.name.endswith("_Prop"):
+            push(
+                f"Prop action '{prop_action.name}' should end in '_Prop' "
+                "(avatar action should end in '_Avatar') so Decentraland can tell the two clips apart.",
+            )
+
+        prop_missing = _missing_boundary_channels(
+            prop_action, get_deform_pose_bones(prop_armature), start_frame, end_frame
+        )
+        if prop_missing:
+            push(
+                f"Prop rig '{prop_armature.name}' is missing first/last-frame keys on "
+                f"{len(prop_missing)} bone channels.",
+                is_error=strict_mode,
+            )
+
+    result["metrics"]["prop_object_count"] = prop_object_total
+
+    if prop_armatures and not action.name.endswith("_Avatar"):
+        push(
+            f"Avatar action '{action.name}' should end in '_Avatar' when the emote carries a prop.",
         )
 
     # Approximate displacement/height guidance (<= 1m).
@@ -189,6 +242,11 @@ class OBJECT_OT_validate_emote(bpy.types.Operator):
         box.label(text=f"Active Action: {metrics.get('active_action', '-')}")
         box.label(text=f"Max Horizontal Offset: {metrics.get('max_horizontal_m', '-')} m")
         box.label(text=f"Max Vertical Offset: {metrics.get('max_vertical_m', '-')} m")
+        if metrics.get("prop_armature_count"):
+            box.label(
+                text=f"Prop Rigs: {metrics.get('prop_armature_count')} "
+                f"({metrics.get('prop_object_count', 0)} mesh objects)"
+            )
 
         if result.get("errors"):
             box = layout.box()

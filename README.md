@@ -117,10 +117,10 @@ randomization, emote playback and looping.
 | **Import DCL Rig** | Append the official Decentraland avatar rig into the scene (30 fps, 1-300 frame range) |
 | **Add Prop** | Import the Prop collection for emotes with hand-held objects |
 | **Limit Area Reference** | Import the animation area reference (ground plane, boundary circles, area box) |
-| **Create Emote Action** | Create a new action on the avatar armature for emote animation |
-| **Set Boundary Keyframes** | Automatically set deform-bone boundary keyframes at start/end frames |
-| **Validate Emote** | Pre-flight check: fps, frame length, action count, boundary keyframes, root displacement |
-| **Export Emote GLB** | Export emote animation to GLB with DCL settings and validation preflight |
+| **Create Emote Action** | Create a new action on the avatar armature, plus a matching `_Prop` action on each prop rig |
+| **Set Boundary Keyframes** | Automatically set deform-bone boundary keyframes at start/end frames, on the avatar and prop rigs |
+| **Validate Emote** | Pre-flight check: fps, frame length, action count, boundary keyframes, root displacement, prop rig geometry/action |
+| **Export Emote GLB** | Export emote animation to GLB with DCL settings and validation preflight; includes prop rigs and their geometry |
 
 ### Materials & Textures
 
