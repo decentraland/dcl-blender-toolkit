@@ -4,8 +4,9 @@ Previewing means three things: export the selection to a GLB, serve it from a
 short-lived local bridge, and open the Builder's ``/live-preview`` page, which
 polls the bridge and hot-swaps the model on a live avatar:
 
-    GET /state      -> {"version", "type", "name", "category"}
-    GET /model.glb  -> the latest export
+    GET /state                 -> {"version", "type", "name", "category"}
+    GET /state?since=N         -> same, answered once version != N (or after 25 seconds)
+    GET /model.glb             -> the latest export
 
 Overrides, body shape and emote playback are all chosen on the Builder page;
 the add-on only exports and serves. Refresh is always live: saving the .blend
@@ -23,6 +24,7 @@ import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 
 import bpy
 from bpy.app.handlers import persistent
@@ -31,11 +33,13 @@ from .bridge_utils import (
     DEFAULT_PREVIEWER_URL,
     REFERENCE_AVATAR_COLLECTIONS,
     WEARABLE_CATEGORIES,
+    LiveState,
     build_state_payload,
     live_preview_url,
     normalize_previewer_url,
     previewer_origin,
     readable_category,
+    schedule_dirty,
     wearable_export_error,
 )
 
@@ -43,12 +47,13 @@ MODEL_FILE = "model.glb"
 
 # Re-export only once the scene has been quiet for this long, so dragging a
 # vertex or scrubbing a slider does not export on every mouse move.
-DEBOUNCE_SECONDS = 1.5
+DEBOUNCE_SECONDS = 0.5
 # The refresh itself dirties the depsgraph (the emote exporter toggles
-# visibility and scrubs frames); ignore updates this close after one or the
-# session would loop forever.
+# visibility and scrubs frames). _refresh flushes that while the handler is
+# muted; anything still landing this close after a refresh is handled by
+# schedule_dirty so the session can neither lose an edit nor loop forever.
 _POST_REFRESH_GRACE = 0.75
-_TIMER_INTERVAL = 0.5
+_TIMER_INTERVAL = 0.2
 
 
 # ---------------------------------------------------------------------------
@@ -74,9 +79,12 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
         self._send(204, "text/plain", b"")
 
     def do_GET(self):  # noqa: N802 — http.server naming
-        path = self.path.split("?", 1)[0]
+        path, _, query = self.path.partition("?")
         state, model_path = _server.snapshot()
         if path == "/state" and state:
+            since = parse_qs(query).get("since", [None])[0]
+            if since is not None:
+                state = _server.live.wait_for_change(since) or state
             self._send(200, "application/json", state.encode("utf-8"))
         elif path == f"/{MODEL_FILE}" and model_path:
             try:
@@ -102,7 +110,7 @@ class _BridgeServer:
         self._httpd = None
         self._thread = None
         self._lock = threading.Lock()
-        self._state = ""
+        self.live = LiveState()
         self.directory = None
         self.allowed_origin = ""
 
@@ -131,14 +139,13 @@ class _BridgeServer:
         return self.directory
 
     def publish(self, state_payload):
-        with self._lock:
-            self._state = state_payload
+        self.live.publish(state_payload)
 
     def snapshot(self):
         """Read by the server thread; the state payload and model path move together."""
         with self._lock:
             model_path = os.path.join(self.directory, MODEL_FILE) if self.directory else None
-            return self._state, model_path
+        return self.live.snapshot(), model_path
 
     def stop(self):
         if self._httpd:
@@ -152,8 +159,9 @@ class _BridgeServer:
         self._httpd = None
         self._thread = None
         self.allowed_origin = ""
+        # Also releases any long-poll still waiting on a version change.
+        self.live.publish("")
         with self._lock:
-            self._state = ""
             self.directory = None
 
 
@@ -174,6 +182,7 @@ class _LiveSession:
         self.dirty_at = None
         self.exporting = False
         self.last_refresh = 0.0
+        self.deferred_after_refresh = False
 
     @property
     def active(self):
@@ -235,6 +244,14 @@ def _refresh():
     except Exception as exc:
         error = str(exc)
     finally:
+        # Evaluate the depsgraph now, while the handler is still muted, so the
+        # exporter's restore work (visibility, frame) is not taken for an edit.
+        view_layer = getattr(bpy.context, "view_layer", None)
+        if view_layer is not None:
+            try:
+                view_layer.update()
+            except Exception:
+                pass
         _session.exporting = False
         _session.last_refresh = time.monotonic()
 
@@ -281,13 +298,16 @@ def _on_load_pre(*_args):
 def _on_depsgraph_update(scene, depsgraph):
     if not _session.active or _session.exporting:
         return
-    if time.monotonic() - _session.last_refresh < _POST_REFRESH_GRACE:
-        return
     screen = getattr(bpy.context, "screen", None)
     if screen and screen.is_animation_playing:
         return
-    if any(_is_relevant(update) for update in depsgraph.updates):
-        _session.dirty_at = time.monotonic()
+    if not any(_is_relevant(update) for update in depsgraph.updates):
+        return
+    dirty_at, _session.deferred_after_refresh = schedule_dirty(
+        time.monotonic(), _session.last_refresh, _POST_REFRESH_GRACE, _session.deferred_after_refresh
+    )
+    if dirty_at is not None:
+        _session.dirty_at = dirty_at
 
 
 def _timer():

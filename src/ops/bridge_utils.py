@@ -9,6 +9,7 @@ be exercised without Blender.
 """
 
 import json
+import threading
 from urllib.parse import quote, urlsplit
 
 DEFAULT_PREVIEWER_URL = "https://decentraland.org/builder/live-preview"
@@ -140,3 +141,50 @@ def build_state_payload(*, version, is_emote, name, category=""):
         },
         separators=(",", ":"),
     )
+
+
+# How long a ``/state?since=`` request may be held open before answering with the unchanged state.
+LONG_POLL_SECONDS = 25.0
+
+
+class LiveState:
+    """The ``/state`` payload, publishable from Blender's thread and waitable from the server's.
+
+    The Builder long-polls ``/state?since=<version>``: the request is answered as
+    soon as the published version differs from ``since``, or after LONG_POLL_SECONDS.
+    """
+
+    def __init__(self):
+        self._cond = threading.Condition()
+        self._payload = ""
+        self._version = None
+
+    def publish(self, payload):
+        with self._cond:
+            self._payload = payload
+            self._version = json.loads(payload)["version"] if payload else None
+            self._cond.notify_all()
+
+    def snapshot(self):
+        with self._cond:
+            return self._payload
+
+    def wait_for_change(self, since):
+        with self._cond:
+            self._cond.wait_for(lambda: self._version is None or str(self._version) != since, LONG_POLL_SECONDS)
+            return self._payload
+
+
+def schedule_dirty(now, last_refresh, grace, already_deferred):
+    """When a scene change should mark the session dirty: ``(dirty_at, already_deferred)``.
+
+    Changes landing right after a refresh may be the exporter's own restore
+    work rather than an edit. The first one inside the grace window is deferred
+    to the window's end so a real edit is not lost; a second one in the same
+    window is dropped, so the export's side effects can never re-export forever.
+    """
+    if now - last_refresh >= grace:
+        return now, False
+    if already_deferred:
+        return None, True
+    return last_refresh + grace, True

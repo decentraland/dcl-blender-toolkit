@@ -186,3 +186,61 @@ class TestWiring:
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert "op.previewer_url = DEFAULT_PREVIEWER_URL" in live_src
         assert 'sub.prop(self, "reset_previewer_url"' in live_src
+
+
+class TestLongPoll:
+    def test_a_stale_since_is_answered_at_once(self):
+        live = bridge_utils.LiveState()
+        live.publish(bridge_utils.build_state_payload(version=2, is_emote=False, name="x"))
+        assert json.loads(live.wait_for_change("1"))["version"] == 2
+
+    def test_a_current_since_waits_until_the_version_moves(self):
+        import threading
+        import time
+
+        live = bridge_utils.LiveState()
+        live.publish(bridge_utils.build_state_payload(version=1, is_emote=False, name="x"))
+        threading.Timer(
+            0.05, live.publish, [bridge_utils.build_state_payload(version=2, is_emote=False, name="x")]
+        ).start()
+        started = time.monotonic()
+        assert json.loads(live.wait_for_change("1"))["version"] == 2
+        assert time.monotonic() - started < 2
+
+    def test_clearing_releases_waiters(self):
+        import threading
+
+        live = bridge_utils.LiveState()
+        live.publish(bridge_utils.build_state_payload(version=1, is_emote=False, name="x"))
+        threading.Timer(0.05, live.publish, [""]).start()
+        assert live.wait_for_change("1") == ""
+
+    def test_the_handler_long_polls_state(self):
+        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        assert 'parse_qs(query).get("since", [None])[0]' in live_src
+        assert "_server.live.wait_for_change(since)" in live_src
+
+
+class TestDirtyScheduling:
+    GRACE = 0.75
+
+    def test_an_edit_outside_the_grace_window_is_dirty_now(self):
+        assert bridge_utils.schedule_dirty(10.0, 5.0, self.GRACE, already_deferred=True) == (10.0, False)
+
+    def test_the_first_edit_inside_the_window_is_deferred_to_its_end(self):
+        assert bridge_utils.schedule_dirty(5.2, 5.0, self.GRACE, already_deferred=False) == (5.75, True)
+
+    def test_a_second_edit_inside_the_window_is_dropped(self):
+        # The exporter's own side effects land here after a deferred refresh; without this the
+        # session would re-export forever.
+        assert bridge_utils.schedule_dirty(5.3, 5.0, self.GRACE, already_deferred=True) == (None, True)
+
+    def test_refresh_flushes_the_depsgraph_while_muted(self):
+        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        flush = live_src.index("view_layer.update()")
+        assert flush < live_src.index("_session.exporting = False\n        _session.last_refresh")
+
+    def test_latency_constants(self):
+        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        assert "DEBOUNCE_SECONDS = 0.5" in live_src
+        assert "_TIMER_INTERVAL = 0.2" in live_src
