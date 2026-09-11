@@ -10,9 +10,11 @@ polls the bridge and hot-swaps the model on a live avatar:
 
 Overrides, body shape and emote playback are all chosen on the Builder page;
 the add-on only exports and serves. Refresh is always live: saving the .blend
-re-exports immediately, scene edits re-export after a quiet period (held while
-the user is in Edit or Pose Mode, since the glTF exporter forces Object Mode),
-and each re-export bumps ``version`` so the page picks it up on its next poll. The
+re-exports immediately, scene edits re-export after a quiet period, and each
+re-export bumps ``version`` so the page picks it up on its next poll. The
+user's mode is never touched: the export runs with no active object (the glTF
+exporter would otherwise force Object Mode) and edit-mode meshes are exported
+from a throwaway copy. The
 bridge binds to 127.0.0.1 (OS-assigned port unless one is set in the add-on preferences),
 its URL is passed to the page as the ``bridge`` query param, and it is torn
 down on Stop Live Preview or when the add-on is unregistered.
@@ -245,15 +247,21 @@ def stop_live_preview():
 def _refresh():
     global _version
     _session.exporting = True
+    view_layer = getattr(bpy.context, "view_layer", None)
+    active = view_layer.objects.active if view_layer is not None else None
     try:
+        # The glTF exporter forces Object Mode on the active object and never
+        # restores it; with none active it leaves the user's mode alone.
+        if view_layer is not None:
+            view_layer.objects.active = None
         error = _session.export()
     except Exception as exc:
         error = str(exc)
     finally:
         # Evaluate the depsgraph now, while the handler is still muted, so the
         # exporter's restore work (visibility, frame) is not taken for an edit.
-        view_layer = getattr(bpy.context, "view_layer", None)
         if view_layer is not None:
+            view_layer.objects.active = active
             try:
                 view_layer.update()
             except Exception:
@@ -287,25 +295,11 @@ def _is_relevant(update):
     )
 
 
-def _in_object_mode():
-    """The glTF exporter forces Object Mode and never restores it, so exporting
-    while the user is in Edit or Pose Mode would kick them out of it."""
-    try:
-        active = bpy.context.view_layer.objects.active
-    except AttributeError:
-        return True
-    return active is None or active.mode == "OBJECT"
-
-
 @persistent
 def _on_save_post(*_args):
-    if not _session.active:
-        return
-    if not _in_object_mode():
-        _session.dirty_at = time.monotonic()
-        return
-    _session.dirty_at = None
-    _refresh()
+    if _session.active:
+        _session.dirty_at = None
+        _refresh()
 
 
 @persistent
@@ -334,10 +328,6 @@ def _timer():
     if not _session.active:
         return None
     if _session.dirty_at is not None and time.monotonic() - _session.dirty_at >= DEBOUNCE_SECONDS:
-        # Leaving Edit/Pose Mode fires its own depsgraph update, so the held
-        # export lands once the user is back in Object Mode.
-        if not _in_object_mode():
-            return _TIMER_INTERVAL
         _session.dirty_at = None
         _refresh()
     return _TIMER_INTERVAL
@@ -423,7 +413,7 @@ def _export_wearable_glb(out_path, selected_only):
         extras += [mesh for mesh in _bound_meshes(selected_armatures) if mesh not in selected]
         scope_objects = selected + extras
     else:
-        scope_objects = bpy.context.view_layer.objects
+        scope_objects = list(bpy.context.view_layer.objects)
 
     scope = [(obj.type, [coll.name for coll in obj.users_collection]) for obj in scope_objects]
     error = wearable_export_error(scope, selected_only=selected_only)
@@ -431,15 +421,19 @@ def _export_wearable_glb(out_path, selected_only):
         return error
 
     restore = []
+    snapshots = []
     try:
-        for extra in extras:
-            restore.append((extra, extra.hide_get()))
-            extra.hide_set(False)
-            extra.select_set(True)
+        for obj in scope_objects:
+            restore.append((obj, obj.hide_get(), obj.select_get()))
+            if obj.type == "MESH" and obj.mode == "EDIT":
+                obj.select_set(False)
+                obj = _snapshot_edit_mesh(obj, snapshots)
+            obj.hide_set(False)
+            obj.select_set(True)
         bpy.ops.export_scene.gltf(
             filepath=out_path,
             export_format="GLB",
-            use_selection=selected_only,
+            use_selection=True,
             export_apply=True,
             export_animations=False,
             export_cameras=False,
@@ -448,10 +442,29 @@ def _export_wearable_glb(out_path, selected_only):
     except Exception as exc:
         return str(exc)
     finally:
-        for extra, was_hidden in restore:
-            extra.select_set(False)
-            extra.hide_set(was_hidden)
+        for obj, was_hidden, was_selected in reversed(restore):
+            obj.select_set(was_selected)
+            obj.hide_set(was_hidden)
+        for obj, copy, name in snapshots:
+            mesh = copy.data
+            bpy.data.objects.remove(copy)
+            bpy.data.meshes.remove(mesh)
+            obj.name = name
     return None
+
+
+def _snapshot_edit_mesh(obj, snapshots):
+    """A plain copy exported in place of a mesh being edited: the glTF exporter
+    cannot read edit-mode meshes. Takes the original's name so the GLB matches."""
+    obj.update_from_editmode()
+    copy = obj.copy()
+    copy.data = obj.data.copy()
+    obj.users_collection[0].objects.link(copy)
+    name = obj.name
+    obj.name = name + ".live"
+    copy.name = name
+    snapshots.append((obj, copy, name))
+    return copy
 
 
 def _emote_export_failure(message):

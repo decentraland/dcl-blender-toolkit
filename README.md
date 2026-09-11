@@ -97,8 +97,8 @@ hot-swaps in place: no page reloads, nothing uploaded.
 The Builder's `/live-preview` page polls `/state` and re-fetches the model whenever `version` moves, feeding it
 straight into the avatar as a blob. Refresh is always live: saving the .blend re-exports immediately, and scene
 edits re-export after a short pause (~1.5 s of inactivity), so you can sculpt, tweak materials or adjust keyframes
-and watch the avatar update. While you are in Edit or Pose Mode the refresh waits, and the export lands as soon as
-you return to Object Mode. Exports are swapped in atomically, so the page never sees a half-written file. The
+and watch the avatar update. Your mode is never touched: Edit, Pose and paint sessions keep going while the preview
+refreshes behind them. Exports are swapped in atomically, so the page never sees a half-written file. The
 session ends when you open another .blend, click **Stop Live Preview**, or disable the add-on.
 
 **Connecting:** the preview operator opens `<Previewer URL>?bridge=<bridge URL>`, so the page connects to the

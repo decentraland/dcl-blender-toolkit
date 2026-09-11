@@ -105,8 +105,6 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
                     obj.hide_set(False)
                 obj.select_set(in_export)
 
-            context.view_layer.objects.active = armature
-
             # Only the active action of each rig may become a clip; anything
             # parked on NLA tracks (stashes, other emotes) must not leak in.
             apply_action_assignments(action_assignments)

@@ -174,24 +174,25 @@ class TestWiring:
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert "_bound_armatures(selected)" in live_src
         assert "_bound_meshes(selected_armatures)" in live_src
-        assert "extra.select_set(True)" in live_src
-        assert "extra.select_set(False)" in live_src
+        assert "obj.select_set(True)" in live_src
+        assert "obj.select_set(was_selected)" in live_src
 
     def test_selected_only_defaults_to_on(self):
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         prop = live_src.split("selected_only: bpy.props.BoolProperty(", 1)[1].split("def invoke", 1)[0]
         assert "default=True" in prop
 
-    def test_refresh_waits_while_the_user_is_in_edit_or_pose_mode(self):
-        # The glTF exporter forces Object Mode, so a re-export mid-edit would
-        # kick the user out of Edit Mode every debounce interval.
+    def test_refresh_never_changes_the_users_mode(self):
+        # The glTF exporter forces Object Mode on the active object, so the
+        # refresh exports with none active and swaps edit-mode meshes for a copy.
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        timer = live_src.split("def _timer():", 1)[1].split("def _install_handlers", 1)[0]
-        save = live_src.split("def _on_save_post(", 1)[1].split("@persistent", 1)[0]
-        assert "if not _in_object_mode():" in timer
-        assert "return _TIMER_INTERVAL" in timer.split("if not _in_object_mode():", 1)[1]
-        assert "if not _in_object_mode():" in save
-        assert 'active.mode == "OBJECT"' in live_src
+        emote_src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        refresh = live_src.split("def _refresh():", 1)[1].split("def _is_relevant", 1)[0]
+        assert "view_layer.objects.active = None" in refresh
+        assert "view_layer.objects.active = active" in refresh
+        assert 'if obj.type == "MESH" and obj.mode == "EDIT":' in live_src
+        assert "obj.update_from_editmode()" in live_src
+        assert "objects.active = armature" not in emote_src
 
     def test_the_dialog_has_no_advanced_settings(self):
         # Previewer URL and bridge port are add-on preferences, not dialog options.
