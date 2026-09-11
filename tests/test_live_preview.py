@@ -182,6 +182,17 @@ class TestWiring:
         prop = live_src.split("selected_only: bpy.props.BoolProperty(", 1)[1].split("def invoke", 1)[0]
         assert "default=True" in prop
 
+    def test_refresh_waits_while_the_user_is_in_edit_or_pose_mode(self):
+        # The glTF exporter forces Object Mode, so a re-export mid-edit would
+        # kick the user out of Edit Mode every debounce interval.
+        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        timer = live_src.split("def _timer():", 1)[1].split("def _install_handlers", 1)[0]
+        save = live_src.split("def _on_save_post(", 1)[1].split("@persistent", 1)[0]
+        assert "if not _in_object_mode():" in timer
+        assert "return _TIMER_INTERVAL" in timer.split("if not _in_object_mode():", 1)[1]
+        assert "if not _in_object_mode():" in save
+        assert 'active.mode == "OBJECT"' in live_src
+
     def test_the_dialog_has_no_advanced_settings(self):
         # Previewer URL and bridge port are add-on preferences, not dialog options.
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))

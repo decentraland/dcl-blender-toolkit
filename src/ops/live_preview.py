@@ -10,8 +10,9 @@ polls the bridge and hot-swaps the model on a live avatar:
 
 Overrides, body shape and emote playback are all chosen on the Builder page;
 the add-on only exports and serves. Refresh is always live: saving the .blend
-re-exports immediately, scene edits re-export after a quiet period, and each
-re-export bumps ``version`` so the page picks it up on its next poll. The
+re-exports immediately, scene edits re-export after a quiet period (held while
+the user is in Edit or Pose Mode, since the glTF exporter forces Object Mode),
+and each re-export bumps ``version`` so the page picks it up on its next poll. The
 bridge binds to 127.0.0.1 (OS-assigned port unless one is set in the add-on preferences),
 its URL is passed to the page as the ``bridge`` query param, and it is torn
 down on Stop Live Preview or when the add-on is unregistered.
@@ -286,11 +287,25 @@ def _is_relevant(update):
     )
 
 
+def _in_object_mode():
+    """The glTF exporter forces Object Mode and never restores it, so exporting
+    while the user is in Edit or Pose Mode would kick them out of it."""
+    try:
+        active = bpy.context.view_layer.objects.active
+    except AttributeError:
+        return True
+    return active is None or active.mode == "OBJECT"
+
+
 @persistent
 def _on_save_post(*_args):
-    if _session.active:
-        _session.dirty_at = None
-        _refresh()
+    if not _session.active:
+        return
+    if not _in_object_mode():
+        _session.dirty_at = time.monotonic()
+        return
+    _session.dirty_at = None
+    _refresh()
 
 
 @persistent
@@ -319,6 +334,10 @@ def _timer():
     if not _session.active:
         return None
     if _session.dirty_at is not None and time.monotonic() - _session.dirty_at >= DEBOUNCE_SECONDS:
+        # Leaving Edit/Pose Mode fires its own depsgraph update, so the held
+        # export lands once the user is back in Object Mode.
+        if not _in_object_mode():
+            return _TIMER_INTERVAL
         _session.dirty_at = None
         _refresh()
     return _TIMER_INTERVAL
