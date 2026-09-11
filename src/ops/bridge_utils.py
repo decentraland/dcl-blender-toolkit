@@ -125,6 +125,68 @@ def wearable_export_error(objects, *, selected_only):
     return None
 
 
+def emote_validation_error(errors, warnings, *, strict):
+    """Why the emote cannot be previewed: a headline, then one problem per line. None when it can.
+
+    Mirrors the Export Emote GLB rule: errors always block, warnings block only
+    with Strict Validation on.
+    """
+    problems = list(errors)
+    if strict:
+        problems += list(warnings)
+    if not problems:
+        return None
+
+    if errors:
+        count = len(errors)
+        headline = f"the emote has {count} validation error{'s' if count != 1 else ''} — fix them and preview again"
+    else:
+        headline = (
+            "Strict Validation is on and the emote has warnings — "
+            "fix them, or turn Strict Validation off in the Emote settings"
+        )
+    return "\n".join([headline, *problems])
+
+
+def is_emote_validation_failure(message):
+    """Whether an Export Emote GLB failure was its validation gate (details come from re-validating)."""
+    return "validation" in message.lower()
+
+
+def emote_export_error(message):
+    """Rewrite an Export Emote GLB failure into something the user can act on."""
+    message = message.strip()
+    if message.startswith("Error: "):
+        message = message[len("Error: ") :]
+    message = message.rstrip(".")
+
+    if message.startswith("No armature found"):
+        return "no avatar rig found — use Import DCL Rig in the Emote tab and animate it before previewing"
+
+    view_layer_prefix = "Cannot export, not in the current view layer:"
+    if message.startswith(view_layer_prefix):
+        names = message[len(view_layer_prefix) :].strip()
+        return (
+            f"these objects are excluded from the current view layer and cannot be exported: {names} — "
+            "enable their collections in the Outliner"
+        )
+
+    gltf_prefix = "Export failed:"
+    if message.startswith(gltf_prefix):
+        return f"Blender's glTF exporter failed: {message[len(gltf_prefix) :].strip()}"
+
+    if is_emote_validation_failure(message):
+        return "the emote does not pass validation — run Validate Emote in the Emote tab to see why"
+
+    return message or "the emote export was cancelled"
+
+
+def report_lines(message):
+    """Split an exporter error into the headline for the status bar and the detail lines for a popup."""
+    headline, *details = message.split("\n")
+    return headline, [line for line in details if line.strip()]
+
+
 def readable_category(name):
     """ "upper_body" -> "Upper Body", matching the Builder's labels."""
     return name.replace("_", " ").title()

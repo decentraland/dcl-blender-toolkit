@@ -244,3 +244,66 @@ class TestDirtyScheduling:
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert "DEBOUNCE_SECONDS = 0.5" in live_src
         assert "_TIMER_INTERVAL = 0.2" in live_src
+
+
+class TestEmoteExportErrors:
+    def test_a_passing_emote_has_no_error(self):
+        assert bridge_utils.emote_validation_error([], ["soft"], strict=False) is None
+        assert bridge_utils.emote_validation_error([], [], strict=True) is None
+
+    def test_errors_are_listed_one_per_line_after_a_headline(self):
+        error = bridge_utils.emote_validation_error(
+            [
+                "Scene framerate is 24fps; Decentraland emotes must be 30fps.",
+                "End frame must be greater than start frame.",
+            ],
+            ["a warning that does not block"],
+            strict=False,
+        )
+        headline, details = bridge_utils.report_lines(error)
+        assert "2 validation errors" in headline
+        assert details == [
+            "Scene framerate is 24fps; Decentraland emotes must be 30fps.",
+            "End frame must be greater than start frame.",
+        ]
+
+    def test_a_single_error_is_not_pluralised(self):
+        error = bridge_utils.emote_validation_error(["only one"], [], strict=False)
+        assert "1 validation error —" in error
+
+    def test_strict_mode_blocks_on_warnings_and_says_how_to_get_out(self):
+        error = bridge_utils.emote_validation_error(
+            [], ["Missing first/last-frame keys on 3 bone channels."], strict=True
+        )
+        headline, details = bridge_utils.report_lines(error)
+        assert "Strict Validation" in headline
+        assert details == ["Missing first/last-frame keys on 3 bone channels."]
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("Error: No armature found for export.", "Import DCL Rig"),
+            ("Error: Cannot export, not in the current view layer: Prop, Prop_Mesh", "Prop, Prop_Mesh"),
+            ("Error: Export failed: ValueError('boom')", "glTF exporter failed: ValueError('boom')"),
+            ("Error: Cannot export: emote validation has blocking errors.", "Validate Emote"),
+            ("Error: Strict mode enabled: resolve validation warnings before export.", "Validate Emote"),
+            ("", "cancelled"),
+        ],
+    )
+    def test_operator_failures_are_rewritten_for_the_user(self, raw, expected):
+        message = bridge_utils.emote_export_error(raw)
+        assert expected in message
+        assert not message.startswith("Error:")
+
+    def test_validation_failures_are_recognised_so_they_can_be_expanded(self):
+        assert bridge_utils.is_emote_validation_failure("Error: Cannot export: emote validation has blocking errors.")
+        assert bridge_utils.is_emote_validation_failure(
+            "Strict mode enabled: resolve validation warnings before export."
+        )
+        assert not bridge_utils.is_emote_validation_failure("Error: No armature found for export.")
+
+    def test_the_live_preview_never_leaks_the_operator_traceback(self):
+        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        assert "except RuntimeError as exc:" in live_src
+        assert "_emote_export_failure(str(exc))" in live_src
+        assert "run_emote_validation(bpy.context)" in live_src

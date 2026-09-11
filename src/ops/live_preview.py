@@ -35,13 +35,18 @@ from .bridge_utils import (
     WEARABLE_CATEGORIES,
     LiveState,
     build_state_payload,
+    emote_export_error,
+    emote_validation_error,
+    is_emote_validation_failure,
     live_preview_url,
     normalize_previewer_url,
     previewer_origin,
     readable_category,
+    report_lines,
     schedule_dirty,
     wearable_export_error,
 )
+from .validate_emote import run_emote_validation
 
 MODEL_FILE = "model.glb"
 
@@ -256,7 +261,7 @@ def _refresh():
         _session.last_refresh = time.monotonic()
 
     if error:
-        print(f"DCL live preview: refresh skipped — {error}")
+        print("DCL live preview: refresh skipped — " + error.replace("\n", " | "))
         return
     _version += 1
     _publish_state()
@@ -430,6 +435,27 @@ def _export_wearable_glb(out_path, selected_only):
     return None
 
 
+def _emote_export_failure(message):
+    """The user-facing reason an emote export failed, listing the validation problems when that was the gate."""
+    if is_emote_validation_failure(message):
+        validation = run_emote_validation(bpy.context)
+        strict = bool(bpy.context.scene.dcl_tools.emote_strict_validation)
+        error = emote_validation_error(validation["errors"], validation["warnings"], strict=strict)
+        if error:
+            return error
+    return emote_export_error(message)
+
+
+def _show_error_details(context, title, lines):
+    """A popup listing ``lines``: the status-bar report only fits a single line."""
+
+    def draw(menu, _context):
+        for line in lines:
+            menu.layout.label(text=line)
+
+    context.window_manager.popup_menu(draw, title=title, icon="ERROR")
+
+
 def _make_exporter(directory, is_emote, selected_only):
     """A callback that re-exports into the served folder.
 
@@ -443,9 +469,14 @@ def _make_exporter(directory, is_emote, selected_only):
         if is_emote:
             # Reuses the emote exporter so validation, frame range and prop
             # armatures behave exactly like a normal emote export.
-            result = bpy.ops.object.export_emote_glb(filepath=scratch_path)
+            try:
+                result = bpy.ops.object.export_emote_glb(filepath=scratch_path)
+            except RuntimeError as exc:
+                # bpy re-raises the operator's ERROR report; its text is meant
+                # for the export dialog, not for someone who only hit Preview.
+                return _emote_export_failure(str(exc))
             if "FINISHED" not in result:
-                return "emote export cancelled (check validation)"
+                return emote_export_error("")
         else:
             error = _export_wearable_glb(scratch_path, selected_only)
             if error:
@@ -591,7 +622,10 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
         export = _make_exporter(directory, is_emote, self.selected_only)
         error = export()
         if error:
-            self.report({"ERROR"}, f"Export failed: {error}")
+            headline, details = report_lines(error)
+            self.report({"ERROR"}, f"Cannot preview: {headline}")
+            if details:
+                _show_error_details(context, f"Cannot preview: {headline}", details)
             return {"CANCELLED"}
 
         start_live_session(
