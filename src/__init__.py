@@ -336,10 +336,19 @@ class DCLToolsPreferences(bpy.types.AddonPreferences):
         default="",
     )
 
+    bridge_port: bpy.props.IntProperty(
+        name="Blender Port",
+        description="Port the local bridge listens on. 0 picks a free port automatically",
+        default=0,
+        min=0,
+        max=65535,
+    )
+
     def draw(self, context):
         layout = self.layout
         layout.prop(self, "previewer_url")
         layout.label(text="A locally served page (http://localhost:3000/live-preview) works too.", icon="INFO")
+        layout.prop(self, "bridge_port")
         layout.separator()
         layout.operator(OBJECT_OT_stop_live_preview.bl_idname, icon="X")
 

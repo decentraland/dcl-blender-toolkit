@@ -159,7 +159,7 @@ class TestWiring:
     def test_cors_is_scoped_to_the_previewer_origin(self):
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert '_server.allowed_origin or "*"' in live_src
-        assert "_server.start(self.bridge_port, previewer_origin(previewer_url))" in live_src
+        assert "_server.start(bridge_port, previewer_origin(previewer_url))" in live_src
 
     def test_wearable_exports_are_validated_before_running(self):
         # Both the initial export and live re-exports go through the scope
@@ -179,13 +179,18 @@ class TestWiring:
 
     def test_selected_only_defaults_to_on(self):
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        prop = live_src.split("selected_only: bpy.props.BoolProperty(", 1)[1].split("show_advanced:", 1)[0]
+        prop = live_src.split("selected_only: bpy.props.BoolProperty(", 1)[1].split("def invoke", 1)[0]
         assert "default=True" in prop
 
-    def test_previewer_url_can_be_reset_to_the_default(self):
+    def test_the_dialog_has_no_advanced_settings(self):
+        # Previewer URL and bridge port are add-on preferences, not dialog options.
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        assert "op.previewer_url = DEFAULT_PREVIEWER_URL" in live_src
-        assert 'sub.prop(self, "reset_previewer_url"' in live_src
+        init_src = _read(os.path.join(SRC_DIR, "__init__.py"))
+        assert "show_advanced" not in live_src
+        assert "previewer_url: bpy.props" not in live_src
+        assert "bridge_port: bpy.props" not in live_src
+        assert "bridge_port: bpy.props.IntProperty(" in init_src
+        assert 'getattr(prefs, "bridge_port", 0)' in live_src
 
 
 class TestLongPoll:

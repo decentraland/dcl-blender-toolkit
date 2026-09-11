@@ -12,7 +12,7 @@ Overrides, body shape and emote playback are all chosen on the Builder page;
 the add-on only exports and serves. Refresh is always live: saving the .blend
 re-exports immediately, scene edits re-export after a quiet period, and each
 re-export bumps ``version`` so the page picks it up on its next poll. The
-bridge binds to 127.0.0.1 (OS-assigned port unless one is set under Advanced),
+bridge binds to 127.0.0.1 (OS-assigned port unless one is set in the add-on preferences),
 its URL is passed to the page as the ``bridge`` query param, and it is torn
 down on Stop Live Preview or when the add-on is unregistered.
 """
@@ -494,14 +494,6 @@ def _make_exporter(directory, is_emote, selected_only):
 # ---------------------------------------------------------------------------
 
 
-def _apply_previewer_url_reset(op, _context):
-    # A dialog cannot host a real button that edits its own properties, so the
-    # reset icon is a self-clearing toggle whose update does the work.
-    if op.reset_previewer_url:
-        op.reset_previewer_url = False
-        op.previewer_url = DEFAULT_PREVIEWER_URL
-
-
 class OBJECT_OT_preview_in_builder(bpy.types.Operator):
     bl_idname = "object.preview_in_builder"
     bl_label = "Live Preview in Builder"
@@ -538,83 +530,32 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
         default=True,
     )
 
-    show_advanced: bpy.props.BoolProperty(
-        name="Advanced",
-        default=False,
-        options={"HIDDEN"},
-    )
-
-    previewer_url: bpy.props.StringProperty(
-        name="Previewer URL",
-        description=(
-            "Live Preview page to open. A locally served one "
-            "(http://localhost:3000/live-preview) works too. Saved to the add-on preferences"
-        ),
-        default=DEFAULT_PREVIEWER_URL,
-    )
-
-    reset_previewer_url: bpy.props.BoolProperty(
-        name="Reset Previewer URL",
-        description="Restore the default previewer URL",
-        default=False,
-        update=_apply_previewer_url_reset,
-        options={"HIDDEN", "SKIP_SAVE"},
-    )
-
-    bridge_port: bpy.props.IntProperty(
-        name="Blender Port",
-        description="Port the local bridge listens on. 0 picks a free port automatically",
-        default=0,
-        min=0,
-        max=65535,
-    )
-
     def invoke(self, context, event):
-        prefs = get_addon_preferences(context)
-        saved = getattr(prefs, "previewer_url", "") if prefs else ""
-        self.previewer_url = saved or DEFAULT_PREVIEWER_URL
+        # Emotes have nothing left to configure here; the previewer URL and
+        # bridge port live in the add-on preferences.
+        if self.content_type == "EMOTE":
+            return self.execute(context)
         return context.window_manager.invoke_props_dialog(self, width=380)
 
     def draw(self, context):
         layout = self.layout
-
-        if self.content_type == "WEARABLE":
-            layout.prop(self, "category")
-            layout.prop(self, "selected_only")
-
-        row = layout.row()
-        row.alignment = "LEFT"
-        row.prop(
-            self,
-            "show_advanced",
-            icon="TRIA_DOWN" if self.show_advanced else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if self.show_advanced:
-            box = layout.box()
-            box.use_property_split = True
-            box.use_property_decorate = False
-            row = box.row(align=True)
-            row.prop(self, "previewer_url")
-            sub = row.row(align=True)
-            sub.use_property_split = False
-            sub.prop(self, "reset_previewer_url", text="", icon="LOOP_BACK", emboss=False)
-            box.prop(self, "bridge_port")
+        layout.prop(self, "category")
+        layout.prop(self, "selected_only")
 
     def execute(self, context):
-        previewer_url = normalize_previewer_url(self.previewer_url)
+        prefs = get_addon_preferences(context)
+        previewer_url = normalize_previewer_url(
+            (getattr(prefs, "previewer_url", "") if prefs else "") or DEFAULT_PREVIEWER_URL
+        )
         if not previewer_url:
             self.report({"ERROR"}, "Set the Previewer URL first (Preferences > Add-ons > Decentraland Tools).")
             return {"CANCELLED"}
-
-        prefs = get_addon_preferences(context)
-        if prefs and prefs.previewer_url != previewer_url:
-            prefs.previewer_url = previewer_url
+        bridge_port = getattr(prefs, "bridge_port", 0) if prefs else 0
 
         is_emote = self.content_type == "EMOTE"
 
         try:
-            directory = _server.start(self.bridge_port, previewer_origin(previewer_url))
+            directory = _server.start(bridge_port, previewer_origin(previewer_url))
         except OSError as exc:
             self.report({"ERROR"}, f"Could not start the local bridge: {exc}")
             return {"CANCELLED"}

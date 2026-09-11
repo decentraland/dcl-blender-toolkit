@@ -89,7 +89,7 @@ hot-swaps in place: no page reloads, nothing uploaded.
 | **Stop Live Preview** | Shut down the local bridge and delete the exported files |
 
 **How it works:** the add-on exports a GLB to a temporary folder and serves a tiny local bridge bound to
-`127.0.0.1` (OS-assigned port, or the one set under *Advanced*):
+`127.0.0.1` (OS-assigned port, or the one set in the add-on preferences):
 
 - `GET /state` — `{"version", "type", "name", "category"}`
 - `GET /model.glb` — the latest export
@@ -106,9 +106,9 @@ is saved in **Edit > Preferences > Add-ons > Decentraland Tools**, and a locally
 (`http://localhost:3000/live-preview`) works too.
 
 **Options:** the dialog stays minimal on purpose — the category the preview starts as and *Selected Only* for
-wearable exports (include the armature when the mesh is skinned), plus an *Advanced* section for the Previewer URL
-and the bridge port. Everything else lives on the Builder page: category and overrides, body shape, avatar
-randomization, emote playback and looping.
+wearable exports (include the armature when the mesh is skinned); emotes start streaming right away. The Previewer
+URL and the bridge port are set in **Edit > Preferences > Add-ons > Decentraland Tools**. Everything else lives on
+the Builder page: category and overrides, body shape, avatar randomization, emote playback and looping.
 
 ### Emotes
 
