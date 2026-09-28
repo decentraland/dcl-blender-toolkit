@@ -141,7 +141,12 @@ class _BridgeServer:
                 return self.directory
 
         self.directory = tempfile.mkdtemp(prefix="dcl_live_preview_")
-        self._httpd = ThreadingHTTPServer(("127.0.0.1", port), _BridgeRequestHandler)
+        try:
+            self._httpd = ThreadingHTTPServer(("127.0.0.1", port), _BridgeRequestHandler)
+        except OSError:
+            shutil.rmtree(self.directory, ignore_errors=True)
+            self.directory = None
+            raise
         self._httpd.daemon_threads = True
         self._thread = threading.Thread(target=self._httpd.serve_forever, name="dcl-live-preview", daemon=True)
         self._thread.start()
@@ -227,6 +232,11 @@ def start_live_session(export_callback, *, is_emote, name, category=""):
     _session.is_emote = is_emote
     _session.name = name
     _session.category = category
+    # The operator's initial export just ran: treat it as a refresh so its side
+    # effects get the same grace window, and nothing leaks from a previous session.
+    _session.exporting = False
+    _session.last_refresh = time.monotonic()
+    _session.deferred_after_refresh = False
     _version += 1
     _publish_state()
     _install_handlers()
@@ -459,7 +469,8 @@ def _snapshot_edit_mesh(obj, snapshots):
     obj.update_from_editmode()
     copy = obj.copy()
     copy.data = obj.data.copy()
-    obj.users_collection[0].objects.link(copy)
+    collection = obj.users_collection[0] if obj.users_collection else bpy.context.scene.collection
+    collection.objects.link(copy)
     name = obj.name
     obj.name = name + ".live"
     copy.name = name

@@ -6,28 +6,11 @@ the file (export_anim_single_armature). A file with two emotes authored in it
 exported four clips, which the Builder rejects and both previews choke on.
 """
 
-import importlib.util
 import os
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_DIR = os.path.join(ROOT_DIR, "src")
+from tests._helpers import SRC_DIR, load_emote_utils, read_source
 
-
-def _read(path):
-    with open(path, encoding="utf-8") as f:
-        return f.read()
-
-
-def _load_emote_utils():
-    """Load emote_utils standalone; importing src/ would pull in bpy."""
-    path = os.path.join(SRC_DIR, "ops", "emote_utils.py")
-    spec = importlib.util.spec_from_file_location("emote_utils", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-emote_utils = _load_emote_utils()
+emote_utils = load_emote_utils()
 
 
 class FakeStrip:
@@ -229,18 +212,18 @@ class TestPropActionPairing:
 
 class TestExporterWiring:
     def test_exporter_disables_the_all_actions_fallback(self):
-        src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
         assert '"export_anim_single_armature": False' in src
 
     def test_exporter_mutes_nla_and_claims_names(self):
-        src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
         assert "mute_armature_nla_strips" in src
         assert "claim_export_names" in src
         assert "restore_nla_mutes" in src
         assert "restore_names" in src
 
     def test_exporter_pairs_prop_rigs_to_the_active_emote(self):
-        src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
         assert "pair_prop_actions" in src
         assert "apply_action_assignments" in src
         assert "restore_action_assignments" in src

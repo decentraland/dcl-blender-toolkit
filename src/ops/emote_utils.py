@@ -330,6 +330,15 @@ def restore_view_layer_state(undo):
         setattr(owner, attr, value)
 
 
+def rotation_data_path(pose_bone):
+    """The rotation property a pose bone actually animates in its rotation mode."""
+    if pose_bone.rotation_mode == "QUATERNION":
+        return "rotation_quaternion"
+    if pose_bone.rotation_mode == "AXIS_ANGLE":
+        return "rotation_axis_angle"
+    return "rotation_euler"
+
+
 def get_deform_pose_bones(armature_obj):
     """Return deform pose bones, falling back to all pose bones."""
     if not armature_obj or armature_obj.type != "ARMATURE" or not armature_obj.pose:

@@ -6,16 +6,11 @@ import sys
 
 import pytest
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_DIR = os.path.join(ROOT_DIR, "src")
+from tests._helpers import SRC_DIR, read_source
+
 sys.path.insert(0, os.path.join(SRC_DIR, "ops"))
 
 import bridge_utils  # noqa: E402
-
-
-def _read(path):
-    with open(path, encoding="utf-8") as f:
-        return f.read()
 
 
 class TestStatePayload:
@@ -137,42 +132,42 @@ class TestWiring:
     def test_server_binds_to_loopback_only(self):
         # Security tripwire: the bridge serves the local export to the browser,
         # so it must never listen on anything but loopback.
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert '("127.0.0.1", port)' in live_src
         assert '"0.0.0.0"' not in live_src
 
     def test_cors_lets_any_page_read_the_bridge(self):
         # The page may be served from any environment or a local dev server; the export is
         # read-only and loopback-bound, so the origin is not restricted.
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert 'self.send_header("Access-Control-Allow-Origin", "*")' in live_src
 
     def test_wearable_exports_are_validated_before_running(self):
         # Both the initial export and live re-exports go through the scope
         # check, so a broken scene cancels the preview instead of streaming.
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert "error = wearable_export_error(scope, selected_only=selected_only)" in live_src
 
     def test_the_selection_is_completed_in_both_directions(self):
         # Selecting just the wearable mesh pulls in its rig, selecting just
         # the armature pulls in the wearable meshes bound to it, and the
         # borrowed selection is restored afterwards.
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert "_bound_armatures(selected)" in live_src
         assert "_bound_meshes(selected_armatures)" in live_src
         assert "obj.select_set(True)" in live_src
         assert "obj.select_set(was_selected)" in live_src
 
     def test_selected_only_defaults_to_on(self):
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         prop = live_src.split("selected_only: bpy.props.BoolProperty(", 1)[1].split("def invoke", 1)[0]
         assert "default=True" in prop
 
     def test_refresh_never_changes_the_users_mode(self):
         # The glTF exporter forces Object Mode on the active object, so the
         # refresh exports with none active and swaps edit-mode meshes for a copy.
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        emote_src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        emote_src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
         refresh = live_src.split("def _refresh():", 1)[1].split("def _is_relevant", 1)[0]
         assert "view_layer.objects.active = None" in refresh
         assert "view_layer.objects.active = active" in refresh
@@ -180,10 +175,22 @@ class TestWiring:
         assert "obj.update_from_editmode()" in live_src
         assert "objects.active = armature" not in emote_src
 
+    def test_a_failed_bind_removes_the_temp_directory(self):
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        start = live_src.split("    def start(self, port=0):", 1)[1].split("    def publish", 1)[0]
+        assert "except OSError:" in start
+        assert "shutil.rmtree(self.directory, ignore_errors=True)" in start
+
+    def test_a_new_session_resets_the_refresh_timing(self):
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        start = live_src.split("def start_live_session(", 1)[1].split("def stop_live_session", 1)[0]
+        assert "_session.last_refresh = time.monotonic()" in start
+        assert "_session.deferred_after_refresh = False" in start
+
     def test_the_dialog_has_no_advanced_settings(self):
         # Previewer URL and bridge port are add-on preferences, not dialog options.
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        init_src = _read(os.path.join(SRC_DIR, "__init__.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        init_src = read_source(os.path.join(SRC_DIR, "__init__.py"))
         assert "show_advanced" not in live_src
         assert "previewer_url: bpy.props" not in live_src
         assert "bridge_port: bpy.props" not in live_src
@@ -219,7 +226,7 @@ class TestLongPoll:
         assert live.wait_for_change("1") == ""
 
     def test_the_handler_long_polls_state(self):
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert 'parse_qs(query).get("since", [None])[0]' in live_src
         assert "_server.live.wait_for_change(since)" in live_src
 
@@ -239,12 +246,12 @@ class TestDirtyScheduling:
         assert bridge_utils.schedule_dirty(5.3, 5.0, self.GRACE, already_deferred=True) == (None, True)
 
     def test_refresh_flushes_the_depsgraph_while_muted(self):
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         flush = live_src.index("view_layer.update()")
         assert flush < live_src.index("_session.exporting = False\n        _session.last_refresh")
 
     def test_latency_constants(self):
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert "DEBOUNCE_SECONDS = 0.5" in live_src
         assert "_TIMER_INTERVAL = 0.2" in live_src
 
@@ -306,7 +313,7 @@ class TestEmoteExportErrors:
         assert not bridge_utils.is_emote_validation_failure("Error: No armature found for export.")
 
     def test_the_live_preview_never_leaks_the_operator_traceback(self):
-        live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         assert "except RuntimeError as exc:" in live_src
         assert "_emote_export_failure(str(exc))" in live_src
         assert "run_emote_validation(bpy.context)" in live_src

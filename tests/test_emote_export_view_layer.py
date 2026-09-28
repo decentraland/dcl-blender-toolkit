@@ -6,28 +6,11 @@ objects from a use_visible export. The exporter must make the export objects
 available for the duration of the export and put every flag back afterwards.
 """
 
-import importlib.util
 import os
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_DIR = os.path.join(ROOT_DIR, "src")
+from tests._helpers import SRC_DIR, load_emote_utils, read_source
 
-
-def _read(path):
-    with open(path, encoding="utf-8") as f:
-        return f.read()
-
-
-def _load_emote_utils():
-    """Load emote_utils standalone; importing src/ would pull in bpy."""
-    path = os.path.join(SRC_DIR, "ops", "emote_utils.py")
-    spec = importlib.util.spec_from_file_location("emote_utils", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-emote_utils = _load_emote_utils()
+emote_utils = load_emote_utils()
 
 
 class FakeObject:
@@ -120,10 +103,10 @@ class TestViewLayerPreparation:
 
 class TestExporterWiring:
     def test_exporter_prepares_and_restores_the_view_layer(self):
-        src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
         assert "prepare_view_layer_for_export" in src
         assert "restore_view_layer_state" in src
 
     def test_select_set_is_guarded_by_view_layer_membership(self):
-        src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
         assert "selectable_names" in src

@@ -12,6 +12,7 @@ from .emote_utils import (
     keyframe_exists,
     pair_prop_actions,
     pose_bone_world_location,
+    rotation_data_path,
 )
 
 
@@ -20,13 +21,7 @@ def _missing_boundary_channels(action, pose_bones, start_frame, end_frame):
     missing = []
     for pose_bone in pose_bones:
         base = f'pose.bones["{pose_bone.name}"]'
-        channels = [f"{base}.location", f"{base}.scale"]
-        if pose_bone.rotation_mode == "QUATERNION":
-            channels.append(f"{base}.rotation_quaternion")
-        elif pose_bone.rotation_mode == "AXIS_ANGLE":
-            channels.append(f"{base}.rotation_axis_angle")
-        else:
-            channels.append(f"{base}.rotation_euler")
+        channels = [f"{base}.location", f"{base}.{rotation_data_path(pose_bone)}", f"{base}.scale"]
 
         for channel in channels:
             if not keyframe_exists(action, channel, start_frame) or not keyframe_exists(action, channel, end_frame):
@@ -137,6 +132,9 @@ def run_emote_validation(context):
             )
 
         prop_action = assigned_actions.get(prop_armature.name) or get_active_action(prop_armature)
+        if not prop_action:
+            push(f"Prop rig '{prop_armature.name}' has no action.", is_error=True)
+            continue
 
         if not prop_action.name.endswith("_Prop"):
             push(

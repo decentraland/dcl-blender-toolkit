@@ -4,6 +4,7 @@ from .emote_utils import (
     find_avatar_armature,
     find_prop_armatures,
     get_deform_pose_bones,
+    rotation_data_path,
     sanitize_emote_name,
 )
 
@@ -129,16 +130,9 @@ class OBJECT_OT_set_emote_boundary_keyframes(bpy.types.Operator):
                     context.scene.frame_set(frame)
                     for pose_bone in bones:
                         pose_bone.keyframe_insert(data_path="location", frame=frame, group=pose_bone.name)
-                        if pose_bone.rotation_mode == "QUATERNION":
-                            pose_bone.keyframe_insert(
-                                data_path="rotation_quaternion", frame=frame, group=pose_bone.name
-                            )
-                        elif pose_bone.rotation_mode == "AXIS_ANGLE":
-                            pose_bone.keyframe_insert(
-                                data_path="rotation_axis_angle", frame=frame, group=pose_bone.name
-                            )
-                        else:
-                            pose_bone.keyframe_insert(data_path="rotation_euler", frame=frame, group=pose_bone.name)
+                        pose_bone.keyframe_insert(
+                            data_path=rotation_data_path(pose_bone), frame=frame, group=pose_bone.name
+                        )
                         pose_bone.keyframe_insert(data_path="scale", frame=frame, group=pose_bone.name)
                         inserted += 1
         finally:

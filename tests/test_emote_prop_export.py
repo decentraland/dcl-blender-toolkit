@@ -1,27 +1,10 @@
 """Regression tests for exporting emotes that carry a prop."""
 
-import importlib.util
 import os
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_DIR = os.path.join(ROOT_DIR, "src")
+from tests._helpers import SRC_DIR, load_emote_utils, read_source
 
-
-def _read(path):
-    with open(path, encoding="utf-8") as f:
-        return f.read()
-
-
-def _load_emote_utils():
-    """Load emote_utils standalone; importing src/ would pull in bpy."""
-    path = os.path.join(SRC_DIR, "ops", "emote_utils.py")
-    spec = importlib.util.spec_from_file_location("emote_utils", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-emote_utils = _load_emote_utils()
+emote_utils = load_emote_utils()
 
 
 class FakeBone:
@@ -155,33 +138,44 @@ class TestEmoteExportObjectSet:
 
 class TestExporterWiring:
     def test_exporter_uses_the_prop_aware_object_set(self):
-        src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
         assert "collect_emote_export_objects" in src
         assert "find_avatar_armature" in src
 
     def test_exporter_no_longer_hides_everything_but_one_armature(self):
-        src = _read(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
         assert "obj.hide_viewport = obj != armature" not in src
 
 
 class TestValidatorWiring:
     def test_validator_reads_registered_properties(self):
         """Guards the regression where a merge restored lookups of unregistered properties."""
-        src = _read(os.path.join(SRC_DIR, "ops", "validate_emote.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "validate_emote.py"))
         assert "context.scene.dcl_tools" in src
         assert "dcl_emote_start_frame" not in src
         assert "dcl_emote_end_frame" not in src
         assert "dcl_emote_strict_validation" not in src
 
     def test_validator_checks_prop_rigs(self):
-        src = _read(os.path.join(SRC_DIR, "ops", "validate_emote.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "validate_emote.py"))
         assert "find_prop_armatures" in src
         assert "prop_armature_count" in src
 
 
 class TestActionNaming:
     def test_action_creation_is_prop_aware(self):
-        src = _read(os.path.join(SRC_DIR, "ops", "emote_actions.py"))
+        src = read_source(os.path.join(SRC_DIR, "ops", "emote_actions.py"))
         assert "find_prop_armatures" in src
         assert "_Avatar" in src
         assert "_Prop" in src
+
+
+class TestRotationDataPath:
+    def test_follows_the_bone_rotation_mode(self):
+        class Bone:
+            def __init__(self, mode):
+                self.rotation_mode = mode
+
+        assert emote_utils.rotation_data_path(Bone("QUATERNION")) == "rotation_quaternion"
+        assert emote_utils.rotation_data_path(Bone("AXIS_ANGLE")) == "rotation_axis_angle"
+        assert emote_utils.rotation_data_path(Bone("XYZ")) == "rotation_euler"
