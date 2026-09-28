@@ -70,7 +70,7 @@ class TestPreviewerURL:
             bridge_utils.live_preview_url("   ")
 
     def test_default_is_the_production_page(self):
-        assert bridge_utils.DEFAULT_PREVIEWER_URL == "https://decentraland.org/builder/live-preview"
+        assert bridge_utils.DEFAULT_PREVIEWER_URL == "https://decentraland.org/create/live-preview"
 
 
 class TestPreviewerOrigin:

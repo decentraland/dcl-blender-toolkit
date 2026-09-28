@@ -12,7 +12,7 @@ import json
 import threading
 from urllib.parse import quote, urlsplit
 
-DEFAULT_PREVIEWER_URL = "https://decentraland.org/builder/live-preview"
+DEFAULT_PREVIEWER_URL = "https://decentraland.org/create/live-preview"
 
 # Wearable categories accepted by the Builder (WearableCategory in @dcl/schemas).
 WEARABLE_CATEGORIES = (

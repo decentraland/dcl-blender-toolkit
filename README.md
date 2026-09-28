@@ -102,7 +102,7 @@ refreshes behind them. Exports are swapped in atomically, so the page never sees
 session ends when you open another .blend, click **Stop Live Preview**, or disable the add-on.
 
 **Connecting:** the preview operator opens `<Previewer URL>?bridge=<bridge URL>`, so the page connects to the
-bridge on its own — nothing to paste. The Previewer URL defaults to `https://decentraland.org/builder/live-preview`,
+bridge on its own — nothing to paste. The Previewer URL defaults to `https://decentraland.org/create/live-preview`,
 is saved in **Edit > Preferences > Add-ons > Decentraland Tools**, and a locally served page
 (`http://localhost:3000/live-preview`) works too.
 
