@@ -10,6 +10,7 @@ A comprehensive Blender extension for Decentraland scene, wearable, and emote cr
 - [Features](#features)
   - [Scene Creation](#scene-creation)
   - [Avatars](#avatars)
+  - [Live Preview in the Builder](#live-preview-in-the-builder)
   - [Emotes](#emotes)
   - [Materials & Textures](#materials--textures)
   - [Generate Thumbnail](#generate-thumbnail)
@@ -75,6 +76,41 @@ The panel is organized into collapsible sections in the **3D Viewport Sidebar (N
 | **Avatar Shapes** | Import editable Decentraland avatar base meshes (Shape A, Shape B, or both) for wearable development |
 | **Wearable Limits** | Check selected objects against wearable triangle/material/texture limits per category |
 
+### Live Preview in the Builder
+
+Stream the wearable or emote you are working on to the Builder's **Live Preview** page and watch it on a live
+avatar — with the DCL toon shading, hiding rules and animation playback — without publishing anything. The model
+hot-swaps in place: no page reloads, nothing uploaded.
+
+| Tool | Description |
+|------|-------------|
+| **Preview Wearable** | Export the model to GLB and stream it to the Builder page |
+| **Preview Emote** | Export the animation (validation and frame range included) and stream it to the Builder page |
+| **Stop Live Preview** | Shut down the local bridge and delete the exported files |
+
+**How it works:** the add-on exports a GLB to a temporary folder and serves a tiny local bridge bound to
+`127.0.0.1` (OS-assigned port, or the one set in the add-on preferences):
+
+- `GET /state` — `{"version", "type", "name", "category"}`
+- `GET /model.glb` — the latest export
+
+The Builder's `/live-preview` page polls `/state` and re-fetches the model whenever `version` moves, feeding it
+straight into the avatar as a blob. Refresh is always live: saving the .blend re-exports immediately, and scene
+edits re-export after a short pause (~1.5 s of inactivity), so you can sculpt, tweak materials or adjust keyframes
+and watch the avatar update. Your mode is never touched: Edit, Pose and paint sessions keep going while the preview
+refreshes behind them. Exports are swapped in atomically, so the page never sees a half-written file. The
+session ends when you open another .blend, click **Stop Live Preview**, or disable the add-on.
+
+**Connecting:** the preview operator opens `<Previewer URL>?bridge=<bridge URL>`, so the page connects to the
+bridge on its own — nothing to paste. The Previewer URL defaults to `https://decentraland.org/create/live-preview`,
+is saved in **Edit > Preferences > Add-ons > Decentraland Tools**, and a locally served page
+(`http://localhost:3000/live-preview`) works too.
+
+**Options:** the dialog stays minimal on purpose — the category the preview starts as and *Selected Only* for
+wearable exports (include the armature when the mesh is skinned); emotes start streaming right away. The Previewer
+URL and the bridge port are set in **Edit > Preferences > Add-ons > Decentraland Tools**. Everything else lives on
+the Builder page: category and overrides, body shape, avatar randomization, emote playback and looping.
+
 ### Emotes
 
 | Tool | Description |
@@ -82,10 +118,10 @@ The panel is organized into collapsible sections in the **3D Viewport Sidebar (N
 | **Import DCL Rig** | Append the official Decentraland avatar rig into the scene (30 fps, 1-300 frame range) |
 | **Add Prop** | Import the Prop collection for emotes with hand-held objects |
 | **Limit Area Reference** | Import the animation area reference (ground plane, boundary circles, area box) |
-| **Create Emote Action** | Create a new action on the avatar armature for emote animation |
-| **Set Boundary Keyframes** | Automatically set deform-bone boundary keyframes at start/end frames |
-| **Validate Emote** | Pre-flight check: fps, frame length, action count, boundary keyframes, root displacement |
-| **Export Emote GLB** | Export emote animation to GLB with DCL settings and validation preflight |
+| **Create Emote Action** | Create a new action on the avatar armature, plus a matching `_Prop` action on each prop rig |
+| **Set Boundary Keyframes** | Automatically set deform-bone boundary keyframes at start/end frames, on the avatar and prop rigs |
+| **Validate Emote** | Pre-flight check: fps, frame length, action count, boundary keyframes, root displacement, prop rig geometry/action |
+| **Export Emote GLB** | Export emote animation to GLB with DCL settings and validation preflight; includes prop rigs and their geometry |
 
 ### Materials & Textures
 
