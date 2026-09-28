@@ -145,6 +145,9 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
                 },
             ]
 
+            # The glTF exporter forces Object Mode on the active object and never
+            # restores it; the finally block puts the active object back.
+            context.view_layer.objects.active = None
             last_error = None
             for kwargs in export_kwargs_sets:
                 try:

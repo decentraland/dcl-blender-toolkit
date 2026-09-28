@@ -41,6 +41,7 @@ from .bridge_utils import (
     emote_export_error,
     emote_validation_error,
     is_emote_validation_failure,
+    is_loopback_host,
     live_preview_url,
     normalize_previewer_url,
     readable_category,
@@ -71,6 +72,9 @@ _TIMER_INTERVAL = 0.2
 class _BridgeRequestHandler(BaseHTTPRequestHandler):
     """Serves /state and /model.glb to any page."""
 
+    # Longer than the 25 second long-poll, so idle connections cannot pin threads.
+    timeout = 30
+
     def _send(self, code, content_type, body):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
@@ -90,6 +94,10 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
         self._send(204, "text/plain", b"")
 
     def do_GET(self):  # noqa: N802 — http.server naming
+        # Blocks DNS rebinding: a page whose own host resolves to 127.0.0.1 still sends its name.
+        if not is_loopback_host(self.headers.get("Host"), self.server.server_address[1]):
+            self._send(403, "text/plain", b"forbidden")
+            return
         path, _, query = self.path.partition("?")
         state, model_path = _server.snapshot()
         if path == "/state" and state:
@@ -257,21 +265,15 @@ def stop_live_preview():
 def _refresh():
     global _version
     _session.exporting = True
-    view_layer = getattr(bpy.context, "view_layer", None)
-    active = view_layer.objects.active if view_layer is not None else None
     try:
-        # The glTF exporter forces Object Mode on the active object and never
-        # restores it; with none active it leaves the user's mode alone.
-        if view_layer is not None:
-            view_layer.objects.active = None
         error = _session.export()
     except Exception as exc:
         error = str(exc)
     finally:
         # Evaluate the depsgraph now, while the handler is still muted, so the
         # exporter's restore work (visibility, frame) is not taken for an edit.
+        view_layer = getattr(bpy.context, "view_layer", None)
         if view_layer is not None:
-            view_layer.objects.active = active
             try:
                 view_layer.update()
             except Exception:
@@ -314,8 +316,9 @@ def _on_save_post(*_args):
 
 @persistent
 def _on_load_pre(*_args):
-    # The session belongs to the file it was started from.
-    stop_live_session()
+    # The session belongs to the file it was started from; keeping the bridge up
+    # would serve the previous file's model to the open page.
+    stop_live_preview()
 
 
 @persistent
@@ -421,7 +424,9 @@ def _export_wearable_glb(out_path, selected_only):
         extras = [arm for arm in _bound_armatures(selected) if arm not in selected]
         selected_armatures = {obj for obj in selected if obj.type == "ARMATURE"}
         extras += [mesh for mesh in _bound_meshes(selected_armatures) if mesh not in selected]
-        scope_objects = selected + extras
+        # hide_set/select_set raise for objects outside the view layer (excluded collections).
+        in_view_layer = bpy.context.view_layer.objects
+        scope_objects = selected + [obj for obj in extras if obj.name in in_view_layer]
     else:
         scope_objects = list(bpy.context.view_layer.objects)
 
@@ -430,9 +435,14 @@ def _export_wearable_glb(out_path, selected_only):
     if error:
         return error
 
+    view_layer = bpy.context.view_layer
+    active = view_layer.objects.active
     restore = []
     snapshots = []
     try:
+        # The glTF exporter forces Object Mode on the active object and never
+        # restores it; with none active it leaves the user's mode alone.
+        view_layer.objects.active = None
         for obj in scope_objects:
             restore.append((obj, obj.hide_get(), obj.select_get()))
             if obj.type == "MESH" and obj.mode == "EDIT":
@@ -452,14 +462,19 @@ def _export_wearable_glb(out_path, selected_only):
     except Exception as exc:
         return str(exc)
     finally:
-        for obj, was_hidden, was_selected in reversed(restore):
-            obj.select_set(was_selected)
-            obj.hide_set(was_hidden)
+        # Snapshots first: a failed restore below must not leave a mesh renamed.
         for obj, copy, name in snapshots:
             mesh = copy.data
             bpy.data.objects.remove(copy)
             bpy.data.meshes.remove(mesh)
             obj.name = name
+        for obj, was_hidden, was_selected in reversed(restore):
+            try:
+                obj.select_set(was_selected)
+                obj.hide_set(was_hidden)
+            except RuntimeError:
+                pass
+        view_layer.objects.active = active
     return None
 
 
@@ -606,6 +621,8 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
         export = _make_exporter(directory, is_emote, self.selected_only)
         error = export()
         if error:
+            if not _session.active:
+                _server.stop()
             headline, details = report_lines(error)
             self.report({"ERROR"}, f"Cannot preview: {headline}")
             if details:

@@ -10,7 +10,7 @@ be exercised without Blender.
 
 import json
 import threading
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 DEFAULT_PREVIEWER_URL = "https://decentraland.org/create/live-preview"
 
@@ -50,7 +50,17 @@ def normalize_previewer_url(raw):
     if "://" not in value:
         value = f"https://{value.lstrip('/')}"
 
-    return value.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    value = value.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    # webbrowser.open hands anything else (file://, custom handlers) to the OS.
+    parts = urlsplit(value)
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+        return ""
+    return value
+
+
+def is_loopback_host(host_header, port):
+    """True when a request's Host header names the bridge on loopback."""
+    return (host_header or "").lower() in (f"127.0.0.1:{port}", f"localhost:{port}")
 
 
 def live_preview_url(page_url, bridge_url=""):

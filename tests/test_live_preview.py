@@ -64,8 +64,25 @@ class TestPreviewerURL:
         with pytest.raises(ValueError):
             bridge_utils.live_preview_url("   ")
 
+    @pytest.mark.parametrize(
+        "raw",
+        ["file:///etc/passwd", "ms-settings://display", "javascript://x", "https://"],
+    )
+    def test_only_http_pages_are_opened(self, raw):
+        assert bridge_utils.normalize_previewer_url(raw) == ""
+
     def test_default_is_the_production_page(self):
         assert bridge_utils.DEFAULT_PREVIEWER_URL == "https://decentraland.org/create/live-preview"
+
+
+class TestLoopbackHost:
+    @pytest.mark.parametrize("host", ["127.0.0.1:8081", "localhost:8081", "LOCALHOST:8081"])
+    def test_loopback_names_are_accepted(self, host):
+        assert bridge_utils.is_loopback_host(host, 8081)
+
+    @pytest.mark.parametrize("host", ["attacker.example:8081", "127.0.0.1:9999", "", None])
+    def test_other_hosts_are_rejected(self, host):
+        assert not bridge_utils.is_loopback_host(host, 8081)
 
 
 class TestReadableCategory:
@@ -163,14 +180,10 @@ class TestWiring:
         prop = live_src.split("selected_only: bpy.props.BoolProperty(", 1)[1].split("def invoke", 1)[0]
         assert "default=True" in prop
 
-    def test_refresh_never_changes_the_users_mode(self):
-        # The glTF exporter forces Object Mode on the active object, so the
-        # refresh exports with none active and swaps edit-mode meshes for a copy.
+    def test_edit_mode_meshes_export_from_a_copy(self):
+        # The glTF exporter cannot read a mesh that is being edited.
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         emote_src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
-        refresh = live_src.split("def _refresh():", 1)[1].split("def _is_relevant", 1)[0]
-        assert "view_layer.objects.active = None" in refresh
-        assert "view_layer.objects.active = active" in refresh
         assert 'if obj.type == "MESH" and obj.mode == "EDIT":' in live_src
         assert "obj.update_from_editmode()" in live_src
         assert "objects.active = armature" not in emote_src
@@ -186,6 +199,19 @@ class TestWiring:
         start = live_src.split("def start_live_session(", 1)[1].split("def stop_live_session", 1)[0]
         assert "_session.last_refresh = time.monotonic()" in start
         assert "_session.deferred_after_refresh = False" in start
+
+    def test_opening_another_file_stops_the_bridge(self):
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        load_pre = live_src.split("def _on_load_pre(", 1)[1].split("@persistent", 1)[0]
+        assert "stop_live_preview()" in load_pre
+
+    def test_both_exporters_clear_the_active_object_around_the_gltf_export(self):
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        emote_src = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
+        wearable = live_src.split("def _export_wearable_glb(", 1)[1].split("def _snapshot_edit_mesh", 1)[0]
+        assert "view_layer.objects.active = None" in wearable
+        assert "view_layer.objects.active = active" in wearable
+        assert "context.view_layer.objects.active = None" in emote_src
 
     def test_the_dialog_has_no_advanced_settings(self):
         # Previewer URL and bridge port are add-on preferences, not dialog options.

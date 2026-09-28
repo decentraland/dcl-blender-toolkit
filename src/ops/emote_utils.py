@@ -188,12 +188,17 @@ def pair_prop_actions(avatar_armature, prop_armatures, actions):
 
     Returns (selected_rigs, assignments) with assignments as
     (rig, action_to_assign, previous_action) tuples for apply/restore.
-    Without the naming convention on the avatar action, falls back to every
-    prop rig that has an active action.
+    Without the naming convention on the avatar action, only rigs whose active
+    action ends in '_Prop' count: any other armature (a mocap or retarget source)
+    must not ride along as a prop.
     """
     emote = emote_name_from_action(getattr(get_active_action(avatar_armature), "name", None))
     if emote is None:
-        return [rig for rig in prop_armatures if get_active_action(rig) is not None], []
+        return [
+            rig
+            for rig in prop_armatures
+            if (action := get_active_action(rig)) is not None and action.name.lower().endswith("_prop")
+        ], []
 
     expected = f"{emote}_Prop".lower()
     selected = []
@@ -229,7 +234,9 @@ def apply_action_assignments(assignments):
 
 def restore_action_assignments(assignments):
     for rig, _action, previous in assignments:
-        rig.animation_data.action = previous
+        # Also runs when the export bailed out before apply_action_assignments.
+        if rig.animation_data:
+            rig.animation_data.action = previous
 
 
 def mute_armature_nla_strips(armatures):

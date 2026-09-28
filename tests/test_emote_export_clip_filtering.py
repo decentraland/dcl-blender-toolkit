@@ -193,12 +193,20 @@ class TestPropActionPairing:
         assert selected == [gun_rig]
         assert len(assignments) == 1
 
-    def test_without_naming_convention_animated_rigs_export(self):
+    def test_without_naming_convention_only_prop_actions_export(self):
         avatar = FakeAnimatedRig("Armature", ["Avatar_Hips"], FakeAction("MyDance"))
-        animated = FakeAnimatedRig("Gun", ["Prop_Root"], FakeAction("GunAction", ["Prop_Root"]))
+        prop = FakeAnimatedRig("Gun", ["Prop_Root"], FakeAction("Gun_Prop", ["Prop_Root"]))
         static = FakeAnimatedRig("Crate", ["Crate_Root"])
-        selected, assignments = emote_utils.pair_prop_actions(avatar, [animated, static], [])
-        assert selected == [animated]
+        selected, assignments = emote_utils.pair_prop_actions(avatar, [prop, static], [])
+        assert selected == [prop]
+        assert assignments == []
+
+    def test_non_dcl_rig_with_an_action_is_not_a_prop(self):
+        # A mocap or retarget source rig must not ride into the emote GLB as a prop.
+        avatar = FakeAnimatedRig("Armature", ["Avatar_Hips"], FakeAction("MyDance"))
+        mocap = FakeAnimatedRig("mixamorig", ["mixamorig:Hips"], FakeAction("Take 001", ["mixamorig:Hips"]))
+        selected, assignments = emote_utils.pair_prop_actions(avatar, [mocap], [])
+        assert selected == []
         assert assignments == []
 
     def test_prop_action_bound_to_wrong_bones_is_not_paired(self):
@@ -208,6 +216,14 @@ class TestPropActionPairing:
         selected, assignments = emote_utils.pair_prop_actions(avatar, [tv_rig], actions)
         assert selected == []
         assert assignments == []
+
+
+class TestActionAssignmentRestore:
+    def test_restore_skips_rigs_that_never_had_animation_data(self):
+        # The exporter's finally restores even when it bailed out before applying.
+        rig = FakeAnimatedRig("Gun", ["Prop_Root"])
+        emote_utils.restore_action_assignments([(rig, FakeAction("Invaders_Prop"), None)])
+        assert rig.animation_data is None
 
 
 class TestExporterWiring:

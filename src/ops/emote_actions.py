@@ -84,6 +84,8 @@ class OBJECT_OT_create_emote_action(bpy.types.Operator):
         if prop_armatures:
             layout.prop(self, "create_prop_action")
             layout.label(text=f"{len(prop_armatures)} prop rig(s) detected", icon="OBJECT_DATA")
+            if len(prop_armatures) > 1:
+                layout.label(text="Emotes support one prop rig: only the _Prop action exports", icon="ERROR")
         layout.label(text="Allowed format: Capitalized_Words", icon="INFO")
 
     def invoke(self, context, event):
