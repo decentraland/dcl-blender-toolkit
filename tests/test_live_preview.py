@@ -73,21 +73,6 @@ class TestPreviewerURL:
         assert bridge_utils.DEFAULT_PREVIEWER_URL == "https://decentraland.org/create/live-preview"
 
 
-class TestPreviewerOrigin:
-    @pytest.mark.parametrize(
-        "url,expected",
-        [
-            ("https://decentraland.org/builder/live-preview", "https://decentraland.org"),
-            ("http://localhost:3000/live-preview", "http://localhost:3000"),
-            ("decentraland.zone/builder/live-preview", "https://decentraland.zone"),
-            ("", ""),
-            (None, ""),
-        ],
-    )
-    def test_origin_is_scheme_and_host(self, url, expected):
-        assert bridge_utils.previewer_origin(url) == expected
-
-
 class TestReadableCategory:
     def test_labels_match_the_builder(self):
         assert bridge_utils.readable_category("upper_body") == "Upper Body"
@@ -156,10 +141,11 @@ class TestWiring:
         assert '("127.0.0.1", port)' in live_src
         assert '"0.0.0.0"' not in live_src
 
-    def test_cors_is_scoped_to_the_previewer_origin(self):
+    def test_cors_lets_any_page_read_the_bridge(self):
+        # The page may be served from any environment or a local dev server; the export is
+        # read-only and loopback-bound, so the origin is not restricted.
         live_src = _read(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        assert '_server.allowed_origin or "*"' in live_src
-        assert "_server.start(bridge_port, previewer_origin(previewer_url))" in live_src
+        assert 'self.send_header("Access-Control-Allow-Origin", "*")' in live_src
 
     def test_wearable_exports_are_validated_before_running(self):
         # Both the initial export and live re-exports go through the scope

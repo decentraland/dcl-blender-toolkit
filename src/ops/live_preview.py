@@ -43,7 +43,6 @@ from .bridge_utils import (
     is_emote_validation_failure,
     live_preview_url,
     normalize_previewer_url,
-    previewer_origin,
     readable_category,
     report_lines,
     schedule_dirty,
@@ -70,15 +69,19 @@ _TIMER_INTERVAL = 0.2
 
 
 class _BridgeRequestHandler(BaseHTTPRequestHandler):
-    """Serves /state and /model.glb, with CORS scoped to the previewer page's origin."""
+    """Serves /state and /model.glb to any page."""
 
     def _send(self, code, content_type, body):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", _server.allowed_origin or "*")
+        # Any origin: the page may come from any environment or a local dev server, and the
+        # bridge only serves a read-only export on loopback.
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
+        # Chromium's private-network preflight for a public page reaching localhost.
+        self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
@@ -120,7 +123,6 @@ class _BridgeServer:
         self._lock = threading.Lock()
         self.live = LiveState()
         self.directory = None
-        self.allowed_origin = ""
 
     @property
     def running(self):
@@ -130,8 +132,7 @@ class _BridgeServer:
     def port(self):
         return self._httpd.server_address[1] if self._httpd else None
 
-    def start(self, port=0, allowed_origin=""):
-        self.allowed_origin = allowed_origin
+    def start(self, port=0):
         if self.running:
             if port and port != self.port:
                 # An explicitly requested port beats the one already bound.
@@ -166,7 +167,6 @@ class _BridgeServer:
 
         self._httpd = None
         self._thread = None
-        self.allowed_origin = ""
         # Also releases any long-poll still waiting on a version change.
         self.live.publish("")
         with self._lock:
@@ -587,7 +587,7 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
         is_emote = self.content_type == "EMOTE"
 
         try:
-            directory = _server.start(bridge_port, previewer_origin(previewer_url))
+            directory = _server.start(bridge_port)
         except OSError as exc:
             self.report({"ERROR"}, f"Could not start the local bridge: {exc}")
             return {"CANCELLED"}

@@ -10,7 +10,7 @@ be exercised without Blender.
 
 import json
 import threading
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 DEFAULT_PREVIEWER_URL = "https://decentraland.org/create/live-preview"
 
@@ -65,21 +65,6 @@ def live_preview_url(page_url, bridge_url=""):
     if bridge_url:
         url += f"?bridge={quote(bridge_url, safe='')}"
     return url
-
-
-def previewer_origin(page_url):
-    """The ``scheme://host[:port]`` origin of the previewer page.
-
-    Used to scope the bridge's CORS header to the one page allowed to read it.
-    Empty when no origin can be derived (the bridge then falls back to ``*``).
-    """
-    url = normalize_previewer_url(page_url)
-    if not url:
-        return ""
-    parts = urlsplit(url)
-    if not parts.scheme or not parts.netloc:
-        return ""
-    return f"{parts.scheme}://{parts.netloc}"
 
 
 # Body-mesh collections created by Import DCL Rig. Meshes in them are only a
