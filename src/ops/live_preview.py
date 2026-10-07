@@ -526,6 +526,7 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
 
         # Only now that the export succeeded: a failed re-preview must not cut off
         # the page that is already streaming the previous session.
+        previous_token = _server.token
         _server.rotate_token()
         start_live_session(
             export,
@@ -538,8 +539,10 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
         try:
             webbrowser.open(live_preview_url(previewer_url, bridge_url))
         except Exception as exc:
-            # Don't leave handlers and the timer re-exporting for a page nobody opened.
+            # Don't leave handlers and the timer re-exporting for a page nobody opened,
+            # and let a tab from the previous session keep reaching the bridge.
             stop_live_session()
+            _server.token = previous_token
             self.report({"ERROR"}, f"Could not open the browser: {exc}")
             return {"CANCELLED"}
 

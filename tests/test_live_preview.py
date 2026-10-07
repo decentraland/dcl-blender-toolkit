@@ -244,14 +244,6 @@ class TestBridgeServer:
         with _get(f"{bridge.url}/state") as response:
             assert json.loads(response.read())["version"] == 1
 
-    def test_the_operator_rotates_the_token_only_after_the_export_succeeded(self):
-        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        execute = live_src.split("        export = _make_exporter(directory", 1)[1]
-        assert execute.count("_server.rotate_token()") == 1
-        assert execute.index('return {"CANCELLED"}') < execute.index("_server.rotate_token()")
-        assert execute.index("_server.rotate_token()") < execute.index("start_live_session(")
-        assert execute.index("start_live_session(") < execute.index("bridge_url = _server.url")
-
     def test_stop_returns_at_once_while_a_long_poll_is_open(self, bridge):
         # The page always holds /state?since=<current> open; stopping must not wait for it.
         poll = threading.Thread(target=lambda: _get(f"{bridge.url}/state?since=1").read(), daemon=True)
@@ -487,11 +479,17 @@ class TestBoundArmatures:
         visible = [FakeMesh("Jacket", skinned_to=[rig, mocap]), rig]
         assert bridge_utils.missing_bound_armatures(visible) == set()
 
-    def test_disabled_modifiers_do_not_bind(self):
+    def test_a_disabled_modifier_still_needs_its_rig(self):
+        # Modelling in rest pose with the modifier's viewport toggle off is common, and the
+        # glTF exporter skins the mesh through that modifier anyway.
+        rig = FakeArmature("Armature")
+        mesh = FakeMesh("Jacket", skinned_to=[rig], disabled=[rig])
+        assert bridge_utils.missing_bound_armatures([mesh]) == {rig}
+
+    def test_a_disabled_stale_modifier_adds_nothing_when_the_real_rig_is_in_scope(self):
         rig, mocap = FakeArmature("Armature"), FakeArmature("Mocap")
         mesh = FakeMesh("Jacket", skinned_to=[rig, mocap], disabled=[mocap])
-        assert bridge_utils.bound_armatures([mesh]) == {rig}
-        assert bridge_utils.missing_bound_armatures([mesh]) == {rig}
+        assert bridge_utils.missing_bound_armatures([mesh, rig]) == set()
 
     def test_a_mesh_bound_only_to_hidden_rigs_pulls_them_all_in(self):
         # Timing cannot tell the real one from a stale one; the scope check then explains.

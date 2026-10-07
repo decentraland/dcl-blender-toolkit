@@ -248,11 +248,15 @@ class LiveState:
 
 
 def bound_armatures(objects):
-    """The armatures the given objects are skinned (by an enabled modifier) or parented to."""
+    """The armatures the given objects are skinned or parented to.
+
+    A modifier disabled in the viewport still counts: the glTF exporter skins
+    the mesh through it regardless, so its rig must be part of the export.
+    """
     armatures = set()
     for obj in objects:
         for mod in getattr(obj, "modifiers", ()):
-            if mod.type == "ARMATURE" and mod.object is not None and getattr(mod, "show_viewport", True):
+            if mod.type == "ARMATURE" and mod.object is not None:
                 armatures.add(mod.object)
         if obj.parent is not None and obj.parent.type == "ARMATURE":
             armatures.add(obj.parent)
