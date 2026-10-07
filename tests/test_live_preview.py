@@ -223,6 +223,13 @@ class TestWiring:
         assert "bridge_port: bpy.props.IntProperty(" in init_src
         assert 'getattr(prefs, "bridge_port", 0)' in live_src
 
+    def test_the_previewer_url_preference_can_be_reset_to_the_default(self):
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        init_src = read_source(os.path.join(SRC_DIR, "__init__.py"))
+        assert "prefs.previewer_url = DEFAULT_PREVIEWER_URL" in live_src
+        assert "default=DEFAULT_PREVIEWER_URL" in init_src
+        assert "row.operator(OBJECT_OT_reset_previewer_url.bl_idname" in init_src
+
 
 class TestLongPoll:
     def test_a_stale_since_is_answered_at_once(self):

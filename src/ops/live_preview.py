@@ -649,6 +649,20 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class OBJECT_OT_reset_previewer_url(bpy.types.Operator):
+    bl_idname = "object.reset_previewer_url"
+    bl_label = "Reset Previewer URL"
+    bl_description = "Restore the default previewer URL"
+    bl_options = {"REGISTER", "INTERNAL"}
+
+    def execute(self, context):
+        prefs = get_addon_preferences(context)
+        if prefs is None:
+            return {"CANCELLED"}
+        prefs.previewer_url = DEFAULT_PREVIEWER_URL
+        return {"FINISHED"}
+
+
 class OBJECT_OT_stop_live_preview(bpy.types.Operator):
     bl_idname = "object.stop_live_preview"
     bl_label = "Stop Live Preview"

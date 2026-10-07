@@ -43,7 +43,9 @@ from .ops.import_dcl_rig import OBJECT_OT_import_dcl_limit_area, OBJECT_OT_impor
 from .ops.install_theme import OBJECT_OT_install_dcl_theme
 from .ops.link_avatar_wearables import OBJECT_OT_link_avatar_wearables
 from .ops.live_preview import (
+    DEFAULT_PREVIEWER_URL,
     OBJECT_OT_preview_in_builder,
+    OBJECT_OT_reset_previewer_url,
     OBJECT_OT_stop_live_preview,
     stop_live_preview,
 )
@@ -333,7 +335,7 @@ class DCLToolsPreferences(bpy.types.AddonPreferences):
     previewer_url: bpy.props.StringProperty(
         name="Previewer URL",
         description="Live Preview page opened by Preview Wearable / Preview Emote",
-        default="",
+        default=DEFAULT_PREVIEWER_URL,
     )
 
     bridge_port: bpy.props.IntProperty(
@@ -346,7 +348,9 @@ class DCLToolsPreferences(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, "previewer_url")
+        row = layout.row(align=True)
+        row.prop(self, "previewer_url")
+        row.operator(OBJECT_OT_reset_previewer_url.bl_idname, text="", icon="LOOP_BACK")
         layout.label(text="A locally served page (http://localhost:3000/live-preview) works too.", icon="INFO")
         layout.prop(self, "bridge_port")
         layout.separator()
@@ -708,6 +712,7 @@ classes = (
     OBJECT_OT_link_avatar_wearables,
     OBJECT_OT_particles_to_armature_converter,
     OBJECT_OT_preview_in_builder,
+    OBJECT_OT_reset_previewer_url,
     OBJECT_OT_stop_live_preview,
     OBJECT_OT_avatar_limitations,
     OBJECT_OT_replace_materials,
