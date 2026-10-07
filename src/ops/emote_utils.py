@@ -1,5 +1,12 @@
 import re
 
+AVATAR_ROOT_BONE = "Avatar_Hips"
+PROP_ROOT_BONE = "Prop_Root"
+
+# Armature object names Decentraland expects inside an emote GLB.
+AVATAR_EXPORT_NAME = "Armature"
+PROP_EXPORT_NAME = "Armature_Prop"
+
 
 def sanitize_emote_name(raw_name):
     """Format input as Capitalized_Words with no special characters."""
@@ -35,6 +42,350 @@ def find_target_armature(context):
         if candidate.type == "ARMATURE":
             return candidate
     return None
+
+
+def is_avatar_armature(obj):
+    """True when the armature carries the Decentraland avatar bone hierarchy."""
+    if not obj or obj.type != "ARMATURE" or not obj.data:
+        return False
+    bones = obj.data.bones
+    if AVATAR_ROOT_BONE in bones:
+        return True
+    return any(bone.name.startswith("Avatar_") for bone in bones)
+
+
+def is_prop_armature(obj):
+    """True when the armature follows the emote prop convention.
+
+    A prop rig has ``Prop_*`` bones (``Prop_Root`` in the shipped rig), an active
+    action ending in ``_Prop``, or the ``Armature_Prop`` object name. Any other
+    non-avatar armature (a mocap or retarget source) is not a prop.
+    """
+    if not obj or obj.type != "ARMATURE" or not obj.data or is_avatar_armature(obj):
+        return False
+    if any(bone.name.startswith("Prop_") for bone in obj.data.bones):
+        return True
+    action = get_active_action(obj)
+    if action is not None and action.name.lower().endswith("_prop"):
+        return True
+    return obj.name.startswith(PROP_EXPORT_NAME)
+
+
+def find_avatar_armature(context):
+    """
+    Find the avatar rig specifically, so having a prop armature active does not
+    make the prop stand in for the avatar.
+    Preference order mirrors find_target_armature, but only considers avatar rigs;
+    falls back to find_target_armature when no avatar rig is present.
+    """
+    obj = context.active_object
+    if is_avatar_armature(obj):
+        return obj
+
+    for candidate in context.selected_objects:
+        if is_avatar_armature(candidate):
+            return candidate
+
+    for candidate in context.scene.objects:
+        if is_avatar_armature(candidate):
+            return candidate
+
+    return find_target_armature(context)
+
+
+def find_prop_armatures(context, avatar_armature=None):
+    """Return every scene armature that follows the prop convention, minus the avatar rig."""
+    if avatar_armature is None:
+        avatar_armature = find_avatar_armature(context)
+    return [obj for obj in context.scene.objects if obj is not avatar_armature and is_prop_armature(obj)]
+
+
+def find_unrecognised_armatures(context, avatar_armature=None):
+    """Armatures that are neither an avatar rig nor follow the prop convention, so emote tools skip them."""
+    if avatar_armature is None:
+        avatar_armature = find_avatar_armature(context)
+    return [
+        obj
+        for obj in context.scene.objects
+        if obj.type == "ARMATURE"
+        and obj is not avatar_armature
+        and not is_avatar_armature(obj)
+        and not is_prop_armature(obj)
+    ]
+
+
+def choose_prop_armature(context, prop_armatures):
+    """The prop rig a new emote's ``_Prop`` action belongs to.
+
+    A file can hold several emotes, each with its own prop rig, so the active
+    or selected rig wins, then one that has no ``_Prop`` action yet.
+    """
+    if not prop_armatures:
+        return None
+    for candidate in [context.active_object, *context.selected_objects]:
+        if candidate in prop_armatures:
+            return candidate
+    for rig in prop_armatures:
+        action = get_active_action(rig)
+        if action is None or not action.name.lower().endswith("_prop"):
+            return rig
+    return prop_armatures[0]
+
+
+def collect_armature_geometry(context, armature_obj):
+    """
+    Return objects driven by an armature: descendants of the armature object plus
+    anything carrying an Armature modifier pointing at it.
+    """
+    if not armature_obj:
+        return []
+
+    found = []
+    seen = {armature_obj.name}
+
+    def add(obj):
+        if obj.name in seen:
+            return
+        seen.add(obj.name)
+        found.append(obj)
+
+    def add_descendants(parent):
+        for obj in context.scene.objects:
+            if obj.parent is parent:
+                add(obj)
+                add_descendants(obj)
+
+    add_descendants(armature_obj)
+
+    for obj in context.scene.objects:
+        for modifier in getattr(obj, "modifiers", []):
+            if modifier.type == "ARMATURE" and modifier.object is armature_obj:
+                add(obj)
+
+    return found
+
+
+def collect_emote_export_objects(context, avatar_armature, prop_armatures=None):
+    """
+    Build the object set a Decentraland emote GLB must contain.
+
+    The avatar armature is exported on its own - the avatar body meshes come from
+    the wearer in-world, so only its bones and animation belong in the file. Prop
+    armatures are exported together with their geometry, which is the visible part
+    of a prop emote.
+    """
+    if prop_armatures is None:
+        prop_armatures = find_prop_armatures(context, avatar_armature)
+
+    objects = []
+    seen = set()
+
+    def add(obj):
+        if obj is None or obj.name in seen:
+            return
+        seen.add(obj.name)
+        objects.append(obj)
+
+    add(avatar_armature)
+    for prop_armature in prop_armatures:
+        add(prop_armature)
+        for obj in collect_armature_geometry(context, prop_armature):
+            add(obj)
+
+    return objects
+
+
+def action_matches_armature(action, bone_names):
+    """True when the action animates at least one of the given pose bones."""
+    if not action:
+        return False
+    for fcurve in iter_action_fcurves(action):
+        if not fcurve.data_path.startswith('pose.bones["'):
+            continue
+        for bone_name in bone_names:
+            if f'pose.bones["{bone_name}"]' in fcurve.data_path:
+                return True
+    return False
+
+
+def get_active_action(obj):
+    animation_data = getattr(obj, "animation_data", None)
+    return animation_data.action if animation_data and animation_data.action else None
+
+
+def emote_name_from_action(action_name):
+    """'Invaders_Avatar' -> 'Invaders'; None when the suffix convention isn't followed."""
+    if action_name and action_name.lower().endswith("_avatar"):
+        return action_name[: -len("_avatar")]
+    return None
+
+
+def pair_prop_actions(avatar_armature, prop_armatures, actions):
+    """
+    Decide which prop rigs belong to the emote being exported, and which action
+    drives each. A file can hold several emotes, each with its own prop rig;
+    the pair is named after the avatar's active action ('X_Avatar' pairs with
+    'X_Prop'). When the paired action exists but isn't the rig's active action,
+    it is scheduled for temporary assignment during the export.
+
+    Returns (selected_rigs, assignments) with assignments as
+    (rig, action_to_assign, previous_action) tuples for apply/restore.
+    Without the naming convention on the avatar action, only rigs whose active
+    action ends in '_Prop' count: any other armature (a mocap or retarget source)
+    must not ride along as a prop.
+    """
+    emote = emote_name_from_action(getattr(get_active_action(avatar_armature), "name", None))
+    if emote is None:
+        return [
+            rig
+            for rig in prop_armatures
+            if (action := get_active_action(rig)) is not None and action.name.lower().endswith("_prop")
+        ], []
+
+    expected = f"{emote}_Prop".lower()
+    selected = []
+    assignments = []
+    for rig in prop_armatures:
+        active = get_active_action(rig)
+        if active is not None and active.name.lower() == expected:
+            selected.append(rig)
+            continue
+        pose = getattr(rig, "pose", None)
+        bone_names = {bone.name for bone in pose.bones} if pose else set()
+        for action in actions:
+            if action.name.lower() == expected and action_matches_armature(action, bone_names):
+                selected.append(rig)
+                assignments.append((rig, action, active))
+                break
+    return selected, assignments
+
+
+def apply_action_assignments(assignments):
+    for rig, action, _previous in assignments:
+        if not rig.animation_data:
+            rig.animation_data_create()
+        rig.animation_data.action = action
+        # Blender 5 slotted actions: the exporter skips rigs with no action slot.
+        slots = getattr(action, "slots", None)
+        if slots and getattr(rig.animation_data, "action_slot", None) is None:
+            try:
+                rig.animation_data.action_slot = slots[0]
+            except Exception:
+                pass
+
+
+def restore_action_assignments(assignments):
+    for rig, _action, previous in assignments:
+        # Also runs when the export bailed out before apply_action_assignments.
+        if rig.animation_data:
+            rig.animation_data.action = previous
+
+
+def mute_armature_nla_strips(armatures):
+    """
+    Mute every NLA strip on the given rigs so only their active actions become
+    GLB animations. Stashed or parked actions (other emotes, WIP takes) would
+    otherwise export as extra clips. Returns (strip, previous_mute) pairs for
+    restore_nla_mutes.
+    """
+    cache = []
+    for rig in armatures:
+        animation_data = getattr(rig, "animation_data", None)
+        if not animation_data:
+            continue
+        for track in getattr(animation_data, "nla_tracks", None) or []:
+            for strip in getattr(track, "strips", None) or []:
+                cache.append((strip, strip.mute))
+                strip.mute = True
+    return cache
+
+
+def restore_nla_mutes(cache):
+    for strip, was_muted in cache:
+        strip.mute = was_muted
+
+
+def claim_export_names(avatar_armature, prop_armatures, find_object):
+    """
+    Give the exported rigs the object names Decentraland expects in the GLB:
+    'Armature' for the avatar and 'Armature_Prop' for a single prop rig. An
+    object already holding the name (typically a reference rig) is parked
+    under a temporary name so ours doesn't get auto-suffixed to 'Armature.001'.
+    find_object resolves a name to the object holding it (bpy.data.objects.get).
+    Returns (object, original_name) pairs; undo with restore_names.
+    """
+    cache = []
+
+    def claim(obj, name):
+        if obj is None or obj.name == name:
+            return
+        if getattr(obj, "library", None) is not None:
+            return
+        holder = find_object(name)
+        if holder is not None and holder is not obj:
+            # Linked (library) objects can't be renamed; leave everything as is
+            # rather than exporting under an auto-suffixed name anyway.
+            if getattr(holder, "library", None) is not None:
+                return
+            cache.append((holder, holder.name))
+            holder.name = f"{name}.dclexport"
+        cache.append((obj, obj.name))
+        obj.name = name
+
+    claim(avatar_armature, AVATAR_EXPORT_NAME)
+    if len(prop_armatures) == 1:
+        claim(prop_armatures[0], PROP_EXPORT_NAME)
+    return cache
+
+
+def restore_names(cache):
+    for obj, original_name in reversed(cache):
+        obj.name = original_name
+
+
+def prepare_view_layer_for_export(view_layer, export_objects):
+    """
+    Make every collection on the path to an export object available: excluded
+    collections crash select_set ("not in View Layer") and hidden ones silently
+    drop their objects from a use_visible export. Returns an undo list for
+    restore_view_layer_state.
+    """
+    undo = []
+    export_names = {obj.name for obj in export_objects}
+
+    def set_flag(owner, attr, value):
+        if getattr(owner, attr, value) != value:
+            undo.append((owner, attr, getattr(owner, attr)))
+            setattr(owner, attr, value)
+
+    def walk(layer_collection):
+        contained = {obj.name for obj in layer_collection.collection.all_objects}
+        if not contained & export_names:
+            return
+        set_flag(layer_collection, "exclude", False)
+        set_flag(layer_collection, "hide_viewport", False)
+        set_flag(layer_collection.collection, "hide_viewport", False)
+        for child in layer_collection.children:
+            walk(child)
+
+    # The master collection can't be excluded or hidden; walk its children.
+    for child in view_layer.layer_collection.children:
+        walk(child)
+    return undo
+
+
+def restore_view_layer_state(undo):
+    for owner, attr, value in reversed(undo):
+        setattr(owner, attr, value)
+
+
+def rotation_data_path(pose_bone):
+    """The rotation property a pose bone actually animates in its rotation mode."""
+    if pose_bone.rotation_mode == "QUATERNION":
+        return "rotation_quaternion"
+    if pose_bone.rotation_mode == "AXIS_ANGLE":
+        return "rotation_axis_angle"
+    return "rotation_euler"
 
 
 def get_deform_pose_bones(armature_obj):
