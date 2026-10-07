@@ -224,16 +224,33 @@ class TestBridgeServer:
             urlopen(Request(f"{bridge.url}/state", method="OPTIONS", headers={"Host": "evil.example:80"}), timeout=5)
         assert excinfo.value.code == 403
 
-    def test_every_preview_rotates_the_token(self, bridge):
-        # A URL kept by an old tab, a shared link or analytics stops working on the next Preview.
+    def test_starting_a_running_bridge_keeps_the_page_connected(self, bridge):
+        # A re-preview calls start() before its export; if that export fails, the
+        # page streaming the previous session must still reach the bridge.
         first = bridge.url
         assert bridge.start() == bridge.directory
+        assert bridge.url == first
+        with _get(f"{first}/state") as response:
+            assert json.loads(response.read())["version"] == 1
+
+    def test_a_new_session_rotates_the_token(self, bridge):
+        # A URL kept by an old tab, a shared link or analytics stops working on the next session.
+        first = bridge.url
+        bridge.rotate_token()
         assert bridge.url != first
         with pytest.raises(HTTPError) as excinfo:
             _get(f"{first}/state")
         assert excinfo.value.code == 404
         with _get(f"{bridge.url}/state") as response:
             assert json.loads(response.read())["version"] == 1
+
+    def test_the_operator_rotates_the_token_only_after_the_export_succeeded(self):
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        execute = live_src.split("        export = _make_exporter(directory", 1)[1]
+        assert execute.count("_server.rotate_token()") == 1
+        assert execute.index('return {"CANCELLED"}') < execute.index("_server.rotate_token()")
+        assert execute.index("_server.rotate_token()") < execute.index("start_live_session(")
+        assert execute.index("start_live_session(") < execute.index("bridge_url = _server.url")
 
     def test_stop_returns_at_once_while_a_long_poll_is_open(self, bridge):
         # The page always holds /state?since=<current> open; stopping must not wait for it.
@@ -294,7 +311,7 @@ class TestWiring:
         # the armature pulls in the wearable meshes bound to it, and the
         # borrowed selection is restored afterwards.
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        assert "bound_armatures(base)" in live_src
+        assert "missing_bound_armatures(base)" in live_src
         assert "_bound_meshes(selected_armatures)" in live_src
         assert "obj.select_set(True)" in live_src
         assert "obj.select_set(was_selected)" in live_src
@@ -358,7 +375,7 @@ class TestWiring:
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         scope = live_src.split("def _export_wearable_glb(", 1)[1].split("scope = [", 1)[0]
         assert "base = [obj for obj in in_view_layer if obj.visible_get()]" in scope
-        assert "extras += [arm for arm in bound_armatures(base) if arm not in base]" in scope
+        assert "extras += list(missing_bound_armatures(base))" in scope
         assert "list(bpy.context.view_layer.objects)" not in live_src
 
     def test_the_panel_has_a_stop_button(self):
@@ -441,25 +458,45 @@ class FakeArmature:
 class FakeMesh:
     type = "MESH"
 
-    def __init__(self, name, parent=None, skinned_to=None):
+    def __init__(self, name, parent=None, skinned_to=(), disabled=()):
         self.name = name
         self.parent = parent
-        self.modifiers = [type("Mod", (), {"type": "ARMATURE", "object": skinned_to})()] if skinned_to else []
+        self.modifiers = [
+            type("Mod", (), {"type": "ARMATURE", "object": rig, "show_viewport": rig not in disabled})()
+            for rig in skinned_to
+        ]
 
 
 class TestBoundArmatures:
     def test_a_visible_mesh_pulls_in_the_hidden_rig_it_is_skinned_to(self):
         # Full-scene scope: hiding the rig while modelling must not export the mesh unskinned.
         rig = FakeArmature("Armature")
-        visible = [FakeMesh("Jacket", skinned_to=rig), FakeMesh("Prop")]
-        assert bridge_utils.bound_armatures(visible) == {rig}
+        visible = [FakeMesh("Jacket", skinned_to=[rig]), FakeMesh("Prop")]
+        assert bridge_utils.missing_bound_armatures(visible) == {rig}
 
     def test_parenting_counts_too(self):
         rig = FakeArmature("Armature")
-        assert bridge_utils.bound_armatures([FakeMesh("Hat", parent=rig)]) == {rig}
+        assert bridge_utils.missing_bound_armatures([FakeMesh("Hat", parent=rig)]) == {rig}
 
     def test_unbound_meshes_pull_in_nothing(self):
-        assert bridge_utils.bound_armatures([FakeMesh("Rock"), FakeArmature("Other")]) == set()
+        assert bridge_utils.missing_bound_armatures([FakeMesh("Rock"), FakeArmature("Other")]) == set()
+
+    def test_a_mesh_with_its_rig_in_scope_leaves_hidden_stale_rigs_out(self):
+        # After retargeting, a stale modifier to a hidden mocap rig must not be dragged in.
+        rig, mocap = FakeArmature("Armature"), FakeArmature("Mocap")
+        visible = [FakeMesh("Jacket", skinned_to=[rig, mocap]), rig]
+        assert bridge_utils.missing_bound_armatures(visible) == set()
+
+    def test_disabled_modifiers_do_not_bind(self):
+        rig, mocap = FakeArmature("Armature"), FakeArmature("Mocap")
+        mesh = FakeMesh("Jacket", skinned_to=[rig, mocap], disabled=[mocap])
+        assert bridge_utils.bound_armatures([mesh]) == {rig}
+        assert bridge_utils.missing_bound_armatures([mesh]) == {rig}
+
+    def test_a_mesh_bound_only_to_hidden_rigs_pulls_them_all_in(self):
+        # Timing cannot tell the real one from a stale one; the scope check then explains.
+        rig, mocap = FakeArmature("Armature"), FakeArmature("Mocap")
+        assert bridge_utils.missing_bound_armatures([FakeMesh("Jacket", skinned_to=[rig, mocap])]) == {rig, mocap}
 
 
 class TestRefreshScheduling:

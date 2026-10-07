@@ -38,12 +38,12 @@ from .bridge_utils import (
     WEARABLE_CATEGORIES,
     BridgeServer,
     RefreshScheduler,
-    bound_armatures,
     build_state_payload,
     emote_export_error,
     emote_validation_error,
     is_emote_validation_failure,
     live_preview_url,
+    missing_bound_armatures,
     normalize_previewer_url,
     readable_category,
     report_lines,
@@ -317,9 +317,9 @@ def _export_wearable_glb(out_path, selected_only):
         # What the user hid on purpose (helpers, colliders, alternates) stays out of the preview.
         base = [obj for obj in in_view_layer if obj.visible_get()]
         extras = []
-    # A mesh always needs the rig it is skinned to, even one hidden while modelling;
+    # A mesh always needs a rig it is skinned to, even one hidden while modelling;
     # the hide/restore below unhides it for the export only.
-    extras += [arm for arm in bound_armatures(base) if arm not in base]
+    extras += list(missing_bound_armatures(base))
     scope_objects = base + [obj for obj in extras if obj.name in in_view_layer]
 
     scope = [(obj.type, [coll.name for coll in obj.users_collection]) for obj in scope_objects]
@@ -524,6 +524,9 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
                 _show_error_details(context, f"Cannot preview: {headline}", details)
             return {"CANCELLED"}
 
+        # Only now that the export succeeded: a failed re-preview must not cut off
+        # the page that is already streaming the previous session.
+        _server.rotate_token()
         start_live_session(
             export,
             is_emote=is_emote,

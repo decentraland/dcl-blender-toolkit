@@ -248,15 +248,30 @@ class LiveState:
 
 
 def bound_armatures(objects):
-    """The armatures the given objects are skinned or parented to."""
+    """The armatures the given objects are skinned (by an enabled modifier) or parented to."""
     armatures = set()
     for obj in objects:
         for mod in getattr(obj, "modifiers", ()):
-            if mod.type == "ARMATURE" and mod.object is not None:
+            if mod.type == "ARMATURE" and mod.object is not None and getattr(mod, "show_viewport", True):
                 armatures.add(mod.object)
         if obj.parent is not None and obj.parent.type == "ARMATURE":
             armatures.add(obj.parent)
     return armatures
+
+
+def missing_bound_armatures(objects):
+    """Rigs to add so no object in ``objects`` is exported without its skin.
+
+    An object already bound to a rig in ``objects`` adds nothing: a stale
+    modifier pointing at a hidden retarget armature must not drag it in.
+    """
+    present = set(objects)
+    missing = set()
+    for obj in objects:
+        rigs = bound_armatures([obj])
+        if rigs and not rigs & present:
+            missing |= rigs
+    return missing - present
 
 
 class RefreshScheduler:
@@ -270,6 +285,10 @@ class RefreshScheduler:
     is dropped, so a side effect that survives the depsgraph flush cannot
     re-export forever. A change outside the window is a fresh edit and resets
     the count.
+
+    Known trade-off: once capped, a real edit landing inside the window is
+    dropped too, and the preview catches up on the next change outside it.
+    Timing alone cannot tell that edit from a side effect.
     """
 
     MAX_CHAINED_DEFERRALS = 2
@@ -408,16 +427,11 @@ class BridgeServer:
         return f"http://127.0.0.1:{self.port}/{self.token}" if self._httpd else None
 
     def start(self, port=0):
-        """Bind and serve, returning the export directory. Rebinds when ``port`` changes.
-
-        Every call is a new preview, so the token rotates each time: the URL a
-        previous tab, link or analytics hit may have kept stops working.
-        """
+        """Bind and serve, returning the export directory. Rebinds when ``port`` changes."""
         if self.running:
             if port and port != self.port:
                 self.stop()
             else:
-                self.token = secrets.token_urlsafe(24)
                 return self.directory
 
         self.directory = tempfile.mkdtemp(prefix="dcl_live_preview_")
@@ -427,10 +441,14 @@ class BridgeServer:
             shutil.rmtree(self.directory, ignore_errors=True)
             self.directory = None
             raise
-        self.token = secrets.token_urlsafe(24)
+        self.rotate_token()
         self._thread = threading.Thread(target=self._httpd.serve_forever, name="dcl-live-preview", daemon=True)
         self._thread.start()
         return self.directory
+
+    def rotate_token(self):
+        """Issue a fresh token for a new session: the URL kept by an old tab, link or analytics stops working."""
+        self.token = secrets.token_urlsafe(24)
 
     def publish(self, state_payload):
         self.live.publish(state_payload)
