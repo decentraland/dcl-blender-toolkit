@@ -26,7 +26,6 @@ unregistered.
 
 import os
 import time
-import webbrowser
 
 import bpy
 from bpy.app.handlers import persistent
@@ -45,6 +44,7 @@ from .bridge_utils import (
     live_preview_url,
     missing_bound_armatures,
     normalize_previewer_url,
+    open_in_browser,
     readable_category,
     report_lines,
     wearable_export_error,
@@ -526,7 +526,6 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
 
         # Only now that the export succeeded: a failed re-preview must not cut off
         # the page that is already streaming the previous session.
-        previous_token = _server.token
         _server.rotate_token()
         start_live_session(
             export,
@@ -535,16 +534,12 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
             category=self.category,
         )
 
-        bridge_url = _server.url
-        try:
-            webbrowser.open(live_preview_url(previewer_url, bridge_url))
-        except Exception as exc:
-            # Don't leave handlers and the timer re-exporting for a page nobody opened,
-            # and let a tab from the previous session keep reaching the bridge.
-            stop_live_session()
-            _server.token = previous_token
-            self.report({"ERROR"}, f"Could not open the browser: {exc}")
-            return {"CANCELLED"}
+        page_url = live_preview_url(previewer_url, _server.url)
+        opened, reason = open_in_browser(page_url)
+        if not opened:
+            # The session keeps streaming: the page can still be opened by hand.
+            self.report({"WARNING"}, f"Could not open the browser ({reason}). Open this page yourself: {page_url}")
+            return {"FINISHED"}
 
         self.report({"INFO"}, f"Streaming to the Builder Live Preview page (bridge on 127.0.0.1:{_server.port}).")
         return {"FINISHED"}

@@ -283,7 +283,7 @@ class TestWiring:
 
     def test_the_operator_hands_the_tokenised_url_to_the_page(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        assert "bridge_url = _server.url" in live_src
+        assert "live_preview_url(previewer_url, _server.url)" in live_src
         assert 'f"http://127.0.0.1:{_server.port}"' not in live_src
 
     def test_the_manifest_permission_fits_blenders_limit(self):
@@ -490,6 +490,30 @@ class TestBoundArmatures:
         rig, mocap = FakeArmature("Armature"), FakeArmature("Mocap")
         mesh = FakeMesh("Jacket", skinned_to=[rig, mocap], disabled=[mocap])
         assert bridge_utils.missing_bound_armatures([mesh, rig]) == set()
+
+    def test_a_disabled_stale_modifier_loses_to_the_enabled_one_when_both_rigs_are_out_of_scope(self):
+        # Both rigs hidden: only the rig that actually deforms the mesh comes back.
+        rig, mocap = FakeArmature("Armature"), FakeArmature("Mocap")
+        mesh = FakeMesh("Jacket", skinned_to=[rig, mocap], disabled=[mocap])
+        assert bridge_utils.missing_bound_armatures([mesh]) == {rig}
+
+
+class TestOpenInBrowser:
+    def test_a_false_return_is_a_failure_with_a_reason(self, monkeypatch):
+        # CPython's browsers swallow OSError and return False instead of raising.
+        monkeypatch.setattr(bridge_utils.webbrowser, "open", lambda url: False)
+        assert bridge_utils.open_in_browser("https://example.test") == (False, "no browser is available")
+
+    def test_an_exception_is_a_failure_with_its_message(self, monkeypatch):
+        def boom(url):
+            raise RuntimeError("sandboxed")
+
+        monkeypatch.setattr(bridge_utils.webbrowser, "open", boom)
+        assert bridge_utils.open_in_browser("https://example.test") == (False, "sandboxed")
+
+    def test_success(self, monkeypatch):
+        monkeypatch.setattr(bridge_utils.webbrowser, "open", lambda url: True)
+        assert bridge_utils.open_in_browser("https://example.test") == (True, "")
 
     def test_a_mesh_bound_only_to_hidden_rigs_pulls_them_all_in(self):
         # Timing cannot tell the real one from a stale one; the scope check then explains.

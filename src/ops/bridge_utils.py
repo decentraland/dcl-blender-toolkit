@@ -15,6 +15,7 @@ import secrets
 import shutil
 import tempfile
 import threading
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlsplit
 
@@ -90,6 +91,19 @@ def live_preview_url(page_url, bridge_url=""):
     if bridge_url:
         url += f"?bridge={quote(bridge_url, safe='')}"
     return url
+
+
+def open_in_browser(url):
+    """Open ``url`` in the default browser: ``(opened, reason)``.
+
+    webbrowser.open reports a missing or failing browser by returning False
+    rather than raising, so both outcomes are folded into one answer.
+    """
+    try:
+        opened = bool(webbrowser.open(url))
+    except Exception as exc:
+        return False, str(exc)
+    return opened, "" if opened else "no browser is available"
 
 
 # Body-mesh collections created by Import DCL Rig. Meshes in them are only a
@@ -250,14 +264,16 @@ class LiveState:
 def bound_armatures(objects):
     """The armatures the given objects are skinned or parented to.
 
-    A modifier disabled in the viewport still counts: the glTF exporter skins
-    the mesh through it regardless, so its rig must be part of the export.
+    Rigs behind enabled Armature modifiers win; a rig behind a viewport-disabled
+    modifier counts only when the mesh has no enabled one, since the glTF
+    exporter skins through it regardless, while a disabled modifier next to an
+    enabled one is usually a leftover from retargeting.
     """
     armatures = set()
     for obj in objects:
-        for mod in getattr(obj, "modifiers", ()):
-            if mod.type == "ARMATURE" and mod.object is not None:
-                armatures.add(mod.object)
+        mods = [m for m in getattr(obj, "modifiers", ()) if m.type == "ARMATURE" and m.object is not None]
+        enabled = {m.object for m in mods if getattr(m, "show_viewport", True)}
+        armatures |= enabled or {m.object for m in mods}
         if obj.parent is not None and obj.parent.type == "ARMATURE":
             armatures.add(obj.parent)
     return armatures
