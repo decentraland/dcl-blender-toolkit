@@ -247,19 +247,57 @@ class LiveState:
             return self._payload
 
 
-def schedule_dirty(now, last_refresh, grace, already_deferred):
-    """When a scene change should mark the session dirty: ``(dirty_at, already_deferred)``.
+def bound_armatures(objects):
+    """The armatures the given objects are skinned or parented to."""
+    armatures = set()
+    for obj in objects:
+        for mod in getattr(obj, "modifiers", ()):
+            if mod.type == "ARMATURE" and mod.object is not None:
+                armatures.add(mod.object)
+        if obj.parent is not None and obj.parent.type == "ARMATURE":
+            armatures.add(obj.parent)
+    return armatures
 
-    Changes landing right after a refresh may be the exporter's own restore
-    work rather than an edit. The first one inside the grace window is deferred
-    to the window's end so a real edit is not lost; a second one in the same
-    window is dropped, so the export's side effects can never re-export forever.
+
+class RefreshScheduler:
+    """Decides when a scene change marks the live session dirty.
+
+    Changes landing within ``grace`` seconds of a refresh may be the exporter's
+    own restore work rather than an edit. The first one in a window is deferred
+    to the window's end so a real edit is not lost, and later ones in the same
+    window share that deferral. Refreshes that came only from deferrals are
+    counted, and after MAX_CHAINED_DEFERRALS in a row the next in-window change
+    is dropped, so a side effect that survives the depsgraph flush cannot
+    re-export forever. A change outside the window is a fresh edit and resets
+    the count.
     """
-    if now - last_refresh >= grace:
-        return now, False
-    if already_deferred:
-        return None, True
-    return last_refresh + grace, True
+
+    MAX_CHAINED_DEFERRALS = 2
+
+    def __init__(self, grace):
+        self.grace = grace
+        self.last_refresh = 0.0
+        self.deferred = False
+        self.pending_is_deferred = False
+        self.chained = 0
+
+    def refreshed(self, now):
+        self.last_refresh = now
+        self.deferred = False
+        self.chained = self.chained + 1 if self.pending_is_deferred else 0
+        self.pending_is_deferred = False
+
+    def change(self, now):
+        """When the session should go dirty for a change at ``now``, or None to ignore it."""
+        if now - self.last_refresh >= self.grace:
+            self.chained = 0
+            self.pending_is_deferred = False
+            return now
+        if self.deferred or self.chained >= self.MAX_CHAINED_DEFERRALS:
+            return None
+        self.deferred = True
+        self.pending_is_deferred = True
+        return self.last_refresh + self.grace
 
 
 class _BridgeHTTPServer(ThreadingHTTPServer):
@@ -278,37 +316,50 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
     # Longer than the long-poll, so idle connections cannot pin threads.
     timeout = LONG_POLL_SECONDS + 5
 
-    def _send(self, code, content_type, body):
+    def _send(self, code, content_type, body, cors=True):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        # Any origin: the page may come from any environment or a local dev server. The
-        # per-session token in the path is what keeps other sites out.
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        # Chromium's private-network preflight for a public page reaching localhost.
-        self.send_header("Access-Control-Allow-Private-Network", "true")
+        if cors:
+            # Any origin: the page may come from any environment or a local dev server. The
+            # per-session token in the path is what keeps other sites out.
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "*")
+            # Chromium's private-network preflight for a public page reaching localhost.
+            self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
+    def _refuse(self, code, body):
+        # No CORS headers: a page without the token cannot even tell the bridge is here.
+        self._send(code, "text/plain", body, cors=False)
+
+    def _authorised_path(self):
+        """The route under the session token, or None after refusing the request."""
+        # Blocks DNS rebinding: a page whose own host resolves to 127.0.0.1 still sends its name.
+        if not is_loopback_host(self.headers.get("Host"), self.server.server_address[1]):
+            self._refuse(403, b"forbidden")
+            return None
+        path = self.path.partition("?")[0]
+        # Only the page opened with this session's bridge URL knows the token; any other
+        # site fetching 127.0.0.1 directly gets a 404 for every path.
+        path = strip_session_token(path, self.server.bridge.token)
+        if path is None:
+            self._refuse(404, b"not found")
+        return path
+
     def do_OPTIONS(self):  # noqa: N802 — http.server naming
-        self._send(204, "text/plain", b"")
+        if self._authorised_path() is not None:
+            self._send(204, "text/plain", b"")
 
     def do_GET(self):  # noqa: N802 — http.server naming
         bridge = self.server.bridge
-        # Blocks DNS rebinding: a page whose own host resolves to 127.0.0.1 still sends its name.
-        if not is_loopback_host(self.headers.get("Host"), self.server.server_address[1]):
-            self._send(403, "text/plain", b"forbidden")
-            return
-        path, _, query = self.path.partition("?")
-        # Only the page opened with this session's bridge URL knows the token; any other
-        # site fetching 127.0.0.1 directly gets a 404 for every path.
-        path = strip_session_token(path, bridge.token)
+        path = self._authorised_path()
         if path is None:
-            self._send(404, "text/plain", b"not found")
             return
+        query = self.path.partition("?")[2]
         state, model_path = bridge.snapshot()
         if path == "/state" and state:
             since = parse_qs(query).get("since", [None])[0]
@@ -321,11 +372,11 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                     body = f.read()
             except OSError:
                 # stop() may delete the directory between the snapshot and the read.
-                self._send(404, "text/plain", b"not found")
+                self._refuse(404, b"not found")
             else:
                 self._send(200, "model/gltf-binary", body)
         else:
-            self._send(404, "text/plain", b"not found")
+            self._refuse(404, b"not found")
 
     def log_message(self, fmt, *args):
         # Silence per-request logging; Blender's console is not a web server log.
@@ -357,11 +408,16 @@ class BridgeServer:
         return f"http://127.0.0.1:{self.port}/{self.token}" if self._httpd else None
 
     def start(self, port=0):
-        """Bind and serve, returning the export directory. Rebinding when ``port`` changes."""
+        """Bind and serve, returning the export directory. Rebinds when ``port`` changes.
+
+        Every call is a new preview, so the token rotates each time: the URL a
+        previous tab, link or analytics hit may have kept stops working.
+        """
         if self.running:
             if port and port != self.port:
                 self.stop()
             else:
+                self.token = secrets.token_urlsafe(24)
                 return self.directory
 
         self.directory = tempfile.mkdtemp(prefix="dcl_live_preview_")

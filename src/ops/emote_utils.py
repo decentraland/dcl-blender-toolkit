@@ -100,6 +100,38 @@ def find_prop_armatures(context, avatar_armature=None):
     return [obj for obj in context.scene.objects if obj is not avatar_armature and is_prop_armature(obj)]
 
 
+def find_unrecognised_armatures(context, avatar_armature=None):
+    """Armatures that are neither an avatar rig nor follow the prop convention, so emote tools skip them."""
+    if avatar_armature is None:
+        avatar_armature = find_avatar_armature(context)
+    return [
+        obj
+        for obj in context.scene.objects
+        if obj.type == "ARMATURE"
+        and obj is not avatar_armature
+        and not is_avatar_armature(obj)
+        and not is_prop_armature(obj)
+    ]
+
+
+def choose_prop_armature(context, prop_armatures):
+    """The prop rig a new emote's ``_Prop`` action belongs to.
+
+    A file can hold several emotes, each with its own prop rig, so the active
+    or selected rig wins, then one that has no ``_Prop`` action yet.
+    """
+    if not prop_armatures:
+        return None
+    for candidate in [context.active_object, *context.selected_objects]:
+        if candidate in prop_armatures:
+            return candidate
+    for rig in prop_armatures:
+        action = get_active_action(rig)
+        if action is None or not action.name.lower().endswith("_prop"):
+            return rig
+    return prop_armatures[0]
+
+
 def collect_armature_geometry(context, armature_obj):
     """
     Return objects driven by an armature: descendants of the armature object plus

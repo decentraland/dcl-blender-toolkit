@@ -105,8 +105,8 @@ session ends when you open another .blend, click **Stop Live Preview**, or disab
 
 **Connecting:** the preview operator opens `<Previewer URL>?bridge=<bridge URL>`, so the page connects to the
 bridge on its own — nothing to paste. The Previewer URL defaults to `https://decentraland.org/create/live-preview`,
-is saved in **Edit > Preferences > Add-ons > Decentraland Tools**, and a locally served page
-(`http://localhost:3000/live-preview`) works too.
+is saved in **Edit > Preferences > Add-ons > Decentraland Tools** (with a reset button to restore the default), and
+a locally served page (`http://localhost:3000/live-preview`) works too.
 
 **Options:** the dialog stays minimal on purpose — the category the preview starts as and *Selected Only* for
 wearable exports (include the armature when the mesh is skinned); emotes start streaming right away. The Previewer
@@ -121,12 +121,14 @@ the Builder page: category and overrides, body shape, avatar randomization, emot
 | **Add Prop** | Import the Prop collection for emotes with hand-held objects |
 | **Limit Area Reference** | Import the animation area reference (ground plane, boundary circles, area box) |
 | **Create Emote Action** | Create a new action on the avatar armature, plus a matching `_Prop` action on the prop rig |
-| **Set Boundary Keyframes** | Automatically set deform-bone boundary keyframes at start/end frames, on the avatar and prop rigs |
+| **Set Boundary Keyframes** | Automatically set deform-bone boundary keyframes at start/end frames, on the avatar and prop rig |
 | **Validate Emote** | Pre-flight check: fps, frame length, action count, boundary keyframes, root displacement, prop rig geometry/action |
-| **Export Emote GLB** | Export emote animation to GLB with DCL settings and validation preflight; includes prop rigs and their geometry |
+| **Export Emote GLB** | Export emote animation to GLB with DCL settings and validation preflight; includes the prop rig and its geometry |
 
 A prop rig is any armature with `Prop_*` bones (the one **Add Prop** imports), an active action ending in `_Prop`, or
-named `Armature_Prop`. Other armatures in the file, such as mocap or retarget sources, are left alone.
+named `Armature_Prop`. Other armatures in the file, such as mocap or retarget sources, are left alone, and **Create
+Emote Action** lists them so a custom prop rig can be renamed to count. With several prop rigs in one file (one per
+emote), the active or selected rig gets the new `_Prop` action, otherwise the first rig without one.
 
 ### Materials & Textures
 

@@ -1,12 +1,16 @@
 import bpy
 
 from .emote_utils import (
+    choose_prop_armature,
     find_avatar_armature,
     find_prop_armatures,
+    find_unrecognised_armatures,
     get_deform_pose_bones,
     rotation_data_path,
     sanitize_emote_name,
 )
+
+PROP_CONVENTION_HINT = "add a Prop_* bone or name the rig Armature_Prop to use it as a prop"
 
 
 def _find_starting_pose_action():
@@ -61,10 +65,10 @@ class OBJECT_OT_create_emote_action(bpy.types.Operator):
         source_action = arm.animation_data.action or _find_starting_pose_action()
 
         prop_armatures = find_prop_armatures(context, arm) if self.create_prop_action else []
-        # An emote carries one prop rig, paired by name ('X_Avatar' with 'X_Prop'), so
-        # only the first detected rig gets an action: a second one could never export.
-        prop_armature = prop_armatures[0] if prop_armatures else None
-        skipped = prop_armatures[1:]
+        # An emote carries one prop rig, paired by name ('X_Avatar' with 'X_Prop'); other
+        # rigs in the file belong to other emotes and keep their actions.
+        prop_armature = choose_prop_armature(context, prop_armatures)
+        skipped = [rig for rig in prop_armatures if rig is not prop_armature]
         base_name = sanitize_emote_name(self.emote_name)
 
         # Decentraland tells the two clips apart by the _Avatar / _Prop suffixes, so
@@ -78,9 +82,14 @@ class OBJECT_OT_create_emote_action(bpy.types.Operator):
             created.append(_assign_action(prop_armature, f"{base_name}_Prop", prop_source).name)
 
         message = f"Created action(s): {', '.join(created)}"
+        notes = []
         if skipped:
-            names = ", ".join(obj.name for obj in skipped)
-            self.report({"WARNING"}, f"{message}. Skipped {names}: emotes support a single prop rig.")
+            notes.append(f"left other prop rig(s) alone: {', '.join(obj.name for obj in skipped)}")
+        unrecognised = find_unrecognised_armatures(context, arm)
+        if unrecognised:
+            notes.append(f"not props: {', '.join(obj.name for obj in unrecognised)} — {PROP_CONVENTION_HINT}")
+        if notes:
+            self.report({"WARNING"}, f"{message}. Also {'; '.join(notes)}.")
         else:
             self.report({"INFO"}, message)
         return {"FINISHED"}
@@ -93,9 +102,10 @@ class OBJECT_OT_create_emote_action(bpy.types.Operator):
             layout.prop(self, "create_prop_action")
             layout.label(text=f"{len(prop_armatures)} prop rig(s) detected", icon="OBJECT_DATA")
             if len(prop_armatures) > 1:
-                layout.label(
-                    text=f"Emotes support one prop rig: only {prop_armatures[0].name} gets an action", icon="ERROR"
-                )
+                chosen = choose_prop_armature(context, prop_armatures)
+                layout.label(text=f"Emotes carry one prop rig: {chosen.name} gets the _Prop action", icon="ERROR")
+        for rig in find_unrecognised_armatures(context):
+            layout.label(text=f"{rig.name} is not a prop rig: {PROP_CONVENTION_HINT}", icon="ERROR")
         layout.label(text="Allowed format: Capitalized_Words", icon="INFO")
 
     def invoke(self, context, event):

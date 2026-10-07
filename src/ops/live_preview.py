@@ -37,6 +37,8 @@ from .bridge_utils import (
     REFERENCE_AVATAR_COLLECTIONS,
     WEARABLE_CATEGORIES,
     BridgeServer,
+    RefreshScheduler,
+    bound_armatures,
     build_state_payload,
     emote_export_error,
     emote_validation_error,
@@ -45,7 +47,6 @@ from .bridge_utils import (
     normalize_previewer_url,
     readable_category,
     report_lines,
-    schedule_dirty,
     wearable_export_error,
 )
 from .validate_emote import run_emote_validation
@@ -55,10 +56,13 @@ from .validate_emote import run_emote_validation
 DEBOUNCE_SECONDS = 0.5
 # The refresh itself dirties the depsgraph (the emote exporter toggles
 # visibility and scrubs frames). _refresh flushes that while the handler is
-# muted; anything still landing this close after a refresh is coalesced by
-# schedule_dirty into one deferred refresh so an edit is never lost.
+# muted; anything still landing this close after a refresh goes through
+# RefreshScheduler so an edit is never lost and a side effect cannot loop.
 _POST_REFRESH_GRACE = 0.75
 _TIMER_INTERVAL = 0.2
+# A modal operator (transform drag, stroke) holds re-exports back, but some
+# add-ons keep one running permanently, so the hold is capped.
+_MODAL_HOLD_SECONDS = 5.0
 
 
 _server = BridgeServer()
@@ -77,8 +81,7 @@ class _LiveSession:
         self.category = ""
         self.dirty_at = None
         self.exporting = False
-        self.last_refresh = 0.0
-        self.deferred_after_refresh = False
+        self.scheduler = RefreshScheduler(_POST_REFRESH_GRACE)
 
     @property
     def active(self):
@@ -118,8 +121,8 @@ def start_live_session(export_callback, *, is_emote, name, category=""):
     # The operator's initial export just ran: treat it as a refresh so its side
     # effects get the same grace window, and nothing leaks from a previous session.
     _session.exporting = False
-    _session.last_refresh = time.monotonic()
-    _session.deferred_after_refresh = False
+    _session.scheduler = RefreshScheduler(_POST_REFRESH_GRACE)
+    _session.scheduler.refreshed(time.monotonic())
     _version += 1
     _publish_state()
     _install_handlers()
@@ -167,9 +170,7 @@ def _refresh():
             except Exception:
                 pass
         _session.exporting = False
-        _session.last_refresh = time.monotonic()
-        # A change deferred into this refresh has been exported; the next one is an edit.
-        _session.deferred_after_refresh = False
+        _session.scheduler.refreshed(time.monotonic())
 
     if error:
         print("DCL live preview: refresh skipped — " + error.replace("\n", " | "))
@@ -221,9 +222,7 @@ def _on_depsgraph_update(scene, depsgraph):
         return
     if not any(_is_relevant(update) for update in depsgraph.updates):
         return
-    dirty_at, _session.deferred_after_refresh = schedule_dirty(
-        time.monotonic(), _session.last_refresh, _POST_REFRESH_GRACE, _session.deferred_after_refresh
-    )
+    dirty_at = _session.scheduler.change(time.monotonic())
     if dirty_at is not None:
         _session.dirty_at = dirty_at
 
@@ -238,9 +237,13 @@ def _modal_operator_running():
 def _timer():
     if not _session.active:
         return None
-    if _session.dirty_at is not None and time.monotonic() - _session.dirty_at >= DEBOUNCE_SECONDS:
-        # Exporting under a running modal operator would fight it; stay dirty and retry.
-        if _modal_operator_running():
+    if _session.dirty_at is None:
+        return _TIMER_INTERVAL
+    waited = time.monotonic() - _session.dirty_at
+    if waited >= DEBOUNCE_SECONDS:
+        # Exporting under a running modal operator would fight it: stay dirty and retry,
+        # unless the hold has gone on long enough that the operator is a permanent one.
+        if waited < _MODAL_HOLD_SECONDS and _modal_operator_running():
             return _TIMER_INTERVAL
         _session.dirty_at = None
         _refresh()
@@ -284,18 +287,6 @@ def get_addon_preferences(context):
     return addon.preferences if addon else None
 
 
-def _bound_armatures(objects):
-    """The armatures the given objects are skinned or parented to."""
-    armatures = set()
-    for obj in objects:
-        for mod in getattr(obj, "modifiers", ()):
-            if mod.type == "ARMATURE" and mod.object is not None:
-                armatures.add(mod.object)
-        if obj.parent is not None and obj.parent.type == "ARMATURE":
-            armatures.add(obj.parent)
-    return armatures
-
-
 def _bound_meshes(armatures):
     """Meshes bound to the given armatures, minus the reference avatar's body."""
     if not armatures:
@@ -313,21 +304,23 @@ def _bound_meshes(armatures):
 
 def _export_wearable_glb(out_path, selected_only):
     """Export the wearable to GLB, returning the error (or None)."""
-    extras = []
+    # hide_set/select_set raise for objects outside the view layer (excluded collections).
+    in_view_layer = bpy.context.view_layer.objects
     if selected_only:
-        selected = list(bpy.context.selected_objects)
+        base = list(bpy.context.selected_objects)
         # Complete the selection in both directions: a mesh pulls in the rig
         # it is bound to, and an armature pulls in the wearable meshes bound
         # to it (never the reference body — that is the full-scene footgun).
-        extras = [arm for arm in _bound_armatures(selected) if arm not in selected]
-        selected_armatures = {obj for obj in selected if obj.type == "ARMATURE"}
-        extras += [mesh for mesh in _bound_meshes(selected_armatures) if mesh not in selected]
-        # hide_set/select_set raise for objects outside the view layer (excluded collections).
-        in_view_layer = bpy.context.view_layer.objects
-        scope_objects = selected + [obj for obj in extras if obj.name in in_view_layer]
+        selected_armatures = {obj for obj in base if obj.type == "ARMATURE"}
+        extras = [mesh for mesh in _bound_meshes(selected_armatures) if mesh not in base]
     else:
         # What the user hid on purpose (helpers, colliders, alternates) stays out of the preview.
-        scope_objects = [obj for obj in bpy.context.view_layer.objects if obj.visible_get()]
+        base = [obj for obj in in_view_layer if obj.visible_get()]
+        extras = []
+    # A mesh always needs the rig it is skinned to, even one hidden while modelling;
+    # the hide/restore below unhides it for the export only.
+    extras += [arm for arm in bound_armatures(base) if arm not in base]
+    scope_objects = base + [obj for obj in extras if obj.name in in_view_layer]
 
     scope = [(obj.type, [coll.name for coll in obj.users_collection]) for obj in scope_objects]
     error = wearable_export_error(scope, selected_only=selected_only)

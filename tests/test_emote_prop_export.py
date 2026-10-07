@@ -106,6 +106,43 @@ class TestArmatureIdentification:
     def test_the_imported_prop_rig_name_counts(self):
         assert emote_utils.is_prop_armature(FakeObject("Armature_Prop.001", "ARMATURE", ["root"]))
 
+    def test_custom_rigs_that_miss_the_convention_are_listed_for_the_user(self):
+        avatar = FakeObject("Armature", "ARMATURE", AVATAR_BONES)
+        prop = FakeObject("Armature_Prop", "ARMATURE", PROP_BONES)
+        sword = FakeObject("Sword_Rig", "ARMATURE", ["root", "blade"])
+        context = FakeContext([avatar, prop, sword], active=avatar)
+        assert emote_utils.find_unrecognised_armatures(context, avatar) == [sword]
+
+
+def _with_action(rig, name):
+    rig.animation_data = type("AnimData", (), {"action": type("Action", (), {"name": name})()})()
+    return rig
+
+
+class TestPropRigChoice:
+    def test_no_prop_rigs_means_no_choice(self):
+        assert emote_utils.choose_prop_armature(FakeContext([]), []) is None
+
+    def test_the_active_or_selected_prop_rig_wins(self):
+        first = _with_action(FakeObject("Armature_Prop", "ARMATURE", PROP_BONES), "A_Prop")
+        second = FakeObject("Armature_Prop.001", "ARMATURE", PROP_BONES)
+        rigs = [first, second]
+        assert emote_utils.choose_prop_armature(FakeContext(rigs, active=second), rigs) is second
+        assert emote_utils.choose_prop_armature(FakeContext(rigs, selected=[second]), rigs) is second
+
+    def test_otherwise_a_rig_without_a_prop_action_is_preferred(self):
+        # Emote A already owns the first rig; a new emote's action must not replace A_Prop.
+        first = _with_action(FakeObject("Armature_Prop", "ARMATURE", PROP_BONES), "A_Prop")
+        second = FakeObject("Armature_Prop.001", "ARMATURE", PROP_BONES)
+        rigs = [first, second]
+        assert emote_utils.choose_prop_armature(FakeContext(rigs), rigs) is second
+
+    def test_the_first_rig_is_the_fallback(self):
+        first = _with_action(FakeObject("Armature_Prop", "ARMATURE", PROP_BONES), "A_Prop")
+        second = _with_action(FakeObject("Armature_Prop.001", "ARMATURE", PROP_BONES), "B_Prop")
+        rigs = [first, second]
+        assert emote_utils.choose_prop_armature(FakeContext(rigs), rigs) is first
+
 
 class TestEmoteExportObjectSet:
     def test_prop_rig_and_its_geometry_are_included(self):
@@ -187,7 +224,12 @@ class TestActionNaming:
         # A second rig would get '_Prop_2', which pair_prop_actions never matches.
         src = read_source(os.path.join(SRC_DIR, "ops", "emote_actions.py"))
         assert "_Prop_" not in src
-        assert "skipped = prop_armatures[1:]" in src
+        assert "prop_armature = choose_prop_armature(context, prop_armatures)" in src
+
+    def test_skipped_armatures_are_explained(self):
+        src = read_source(os.path.join(SRC_DIR, "ops", "emote_actions.py"))
+        assert src.count("find_unrecognised_armatures(context") == 2
+        assert "PROP_CONVENTION_HINT" in src
 
 
 class TestRotationDataPath:

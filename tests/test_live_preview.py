@@ -157,7 +157,7 @@ class TestSessionToken:
         assert bridge_utils.strip_session_token("/abc/state", "abc") == "/state"
         assert bridge_utils.strip_session_token("/abc/model.glb", "abc") == "/model.glb"
 
-    @pytest.mark.parametrize("path", ["/state", "/abc", "/abd/state", "/abc", "//state", ""])
+    @pytest.mark.parametrize("path", ["/state", "/abc", "/abd/state", "/abc?x=1", "//state", ""])
     def test_anything_else_is_refused(self, path):
         assert bridge_utils.strip_session_token(path, "abc") is None
 
@@ -203,6 +203,37 @@ class TestBridgeServer:
         with pytest.raises(HTTPError) as excinfo:
             _get(f"{bridge.url}/state", Host="evil.example:80")
         assert excinfo.value.code == 403
+
+    def test_refusals_carry_no_cors_headers(self, bridge):
+        # A page without the token cannot even learn that the bridge is listening.
+        for url, headers in ((f"http://127.0.0.1:{bridge.port}/state", {}), (f"{bridge.url}/state", {"Host": "x:1"})):
+            with pytest.raises(HTTPError) as excinfo:
+                _get(url, **headers)
+            assert "Access-Control-Allow-Origin" not in excinfo.value.headers
+            assert "Access-Control-Allow-Private-Network" not in excinfo.value.headers
+
+    def test_preflight_is_gated_like_every_other_request(self, bridge):
+        with urlopen(Request(f"{bridge.url}/state", method="OPTIONS"), timeout=5) as response:
+            assert response.status == 204
+            assert response.headers["Access-Control-Allow-Private-Network"] == "true"
+        with pytest.raises(HTTPError) as excinfo:
+            urlopen(Request(f"http://127.0.0.1:{bridge.port}/state", method="OPTIONS"), timeout=5)
+        assert excinfo.value.code == 404
+        assert "Access-Control-Allow-Origin" not in excinfo.value.headers
+        with pytest.raises(HTTPError) as excinfo:
+            urlopen(Request(f"{bridge.url}/state", method="OPTIONS", headers={"Host": "evil.example:80"}), timeout=5)
+        assert excinfo.value.code == 403
+
+    def test_every_preview_rotates_the_token(self, bridge):
+        # A URL kept by an old tab, a shared link or analytics stops working on the next Preview.
+        first = bridge.url
+        assert bridge.start() == bridge.directory
+        assert bridge.url != first
+        with pytest.raises(HTTPError) as excinfo:
+            _get(f"{first}/state")
+        assert excinfo.value.code == 404
+        with _get(f"{bridge.url}/state") as response:
+            assert json.loads(response.read())["version"] == 1
 
     def test_stop_returns_at_once_while_a_long_poll_is_open(self, bridge):
         # The page always holds /state?since=<current> open; stopping must not wait for it.
@@ -263,7 +294,7 @@ class TestWiring:
         # the armature pulls in the wearable meshes bound to it, and the
         # borrowed selection is restored afterwards.
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        assert "_bound_armatures(selected)" in live_src
+        assert "bound_armatures(base)" in live_src
         assert "_bound_meshes(selected_armatures)" in live_src
         assert "obj.select_set(True)" in live_src
         assert "obj.select_set(was_selected)" in live_src
@@ -295,8 +326,8 @@ class TestWiring:
     def test_a_new_session_resets_the_refresh_timing(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         start = live_src.split("def start_live_session(", 1)[1].split("def stop_live_session", 1)[0]
-        assert "_session.last_refresh = time.monotonic()" in start
-        assert "_session.deferred_after_refresh = False" in start
+        assert "_session.scheduler = RefreshScheduler(_POST_REFRESH_GRACE)" in start
+        assert "_session.scheduler.refreshed(time.monotonic())" in start
 
     def test_opening_another_file_stops_the_bridge(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
@@ -317,14 +348,18 @@ class TestWiring:
     def test_refreshes_wait_for_modal_operators_to_finish(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         timer = live_src.split("def _timer(", 1)[1].split("def _install_handlers", 1)[0]
-        assert "if _modal_operator_running():" in timer
+        # ...but not forever: an add-on with a permanent modal operator must not stall refreshes.
+        assert "if waited < _MODAL_HOLD_SECONDS and _modal_operator_running():" in timer
         assert timer.index("_modal_operator_running()") < timer.index("_session.dirty_at = None")
+        assert "_MODAL_HOLD_SECONDS = 5.0" in live_src
         assert 'getattr(window, "modal_operators", ())' in live_src
 
-    def test_full_scene_exports_keep_hidden_objects_hidden(self):
+    def test_full_scene_exports_keep_hidden_objects_hidden_but_pull_in_hidden_rigs(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        assert "[obj for obj in bpy.context.view_layer.objects if obj.visible_get()]" in live_src
-        assert "scope_objects = list(bpy.context.view_layer.objects)" not in live_src
+        scope = live_src.split("def _export_wearable_glb(", 1)[1].split("scope = [", 1)[0]
+        assert "base = [obj for obj in in_view_layer if obj.visible_get()]" in scope
+        assert "extras += [arm for arm in bound_armatures(base) if arm not in base]" in scope
+        assert "list(bpy.context.view_layer.objects)" not in live_src
 
     def test_the_panel_has_a_stop_button(self):
         init_src = read_source(os.path.join(SRC_DIR, "__init__.py"))
@@ -394,33 +429,102 @@ class TestLongPoll:
         assert 0.05 < time.monotonic() - started < 2
 
 
-class TestDirtyScheduling:
+class FakeArmature:
+    type = "ARMATURE"
+    parent = None
+    modifiers = ()
+
+    def __init__(self, name):
+        self.name = name
+
+
+class FakeMesh:
+    type = "MESH"
+
+    def __init__(self, name, parent=None, skinned_to=None):
+        self.name = name
+        self.parent = parent
+        self.modifiers = [type("Mod", (), {"type": "ARMATURE", "object": skinned_to})()] if skinned_to else []
+
+
+class TestBoundArmatures:
+    def test_a_visible_mesh_pulls_in_the_hidden_rig_it_is_skinned_to(self):
+        # Full-scene scope: hiding the rig while modelling must not export the mesh unskinned.
+        rig = FakeArmature("Armature")
+        visible = [FakeMesh("Jacket", skinned_to=rig), FakeMesh("Prop")]
+        assert bridge_utils.bound_armatures(visible) == {rig}
+
+    def test_parenting_counts_too(self):
+        rig = FakeArmature("Armature")
+        assert bridge_utils.bound_armatures([FakeMesh("Hat", parent=rig)]) == {rig}
+
+    def test_unbound_meshes_pull_in_nothing(self):
+        assert bridge_utils.bound_armatures([FakeMesh("Rock"), FakeArmature("Other")]) == set()
+
+
+class TestRefreshScheduling:
     GRACE = 0.75
 
+    def scheduler(self, refreshed_at=5.0):
+        scheduler = bridge_utils.RefreshScheduler(self.GRACE)
+        scheduler.refreshed(refreshed_at)
+        return scheduler
+
     def test_an_edit_outside_the_grace_window_is_dirty_now(self):
-        assert bridge_utils.schedule_dirty(10.0, 5.0, self.GRACE, already_deferred=True) == (10.0, False)
+        assert self.scheduler().change(10.0) == 10.0
 
     def test_the_first_edit_inside_the_window_is_deferred_to_its_end(self):
-        assert bridge_utils.schedule_dirty(5.2, 5.0, self.GRACE, already_deferred=False) == (5.75, True)
+        assert self.scheduler().change(5.2) == 5.75
 
-    def test_a_second_edit_inside_the_window_is_coalesced(self):
-        # Several changes in one window share the refresh already deferred to its end.
-        assert bridge_utils.schedule_dirty(5.3, 5.0, self.GRACE, already_deferred=True) == (None, True)
+    def test_later_edits_inside_the_window_share_the_deferral(self):
+        scheduler = self.scheduler()
+        assert scheduler.change(5.2) == 5.75
+        assert scheduler.change(5.3) is None
 
     def test_an_edit_right_after_a_deferred_refresh_is_kept(self):
-        # Refresh at 5.0, a change at 5.2 is deferred to 5.75, the timer refreshes at ~6.25.
-        dirty_at, deferred = bridge_utils.schedule_dirty(5.2, 5.0, self.GRACE, already_deferred=False)
-        assert (dirty_at, deferred) == (5.75, True)
-        # _refresh resets the flag, so an edit at 6.55 is deferred again instead of dropped.
-        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        refresh = live_src.split("def _refresh(", 1)[1].split("def _is_relevant", 1)[0]
-        assert "_session.deferred_after_refresh = False" in refresh
-        assert bridge_utils.schedule_dirty(6.55, 6.25, self.GRACE, already_deferred=False) == (7.0, True)
+        # Refresh at 5.0, a change at 5.2 is deferred to 5.75, the timer refreshes at ~6.25,
+        # and an edit at 6.55 must not be dropped.
+        scheduler = self.scheduler()
+        assert scheduler.change(5.2) == 5.75
+        scheduler.refreshed(6.25)
+        assert scheduler.change(6.55) == 7.0
+
+    def test_side_effects_cannot_chain_refreshes_forever(self):
+        # A side effect that survives the depsgraph flush lands after every refresh.
+        scheduler = self.scheduler(0.0)
+        now = 0.0
+        refreshes = 0
+        for _ in range(10):
+            dirty_at = scheduler.change(now + 0.3)
+            if dirty_at is None:
+                break
+            now = dirty_at + 0.5
+            scheduler.refreshed(now)
+            refreshes += 1
+        assert refreshes == bridge_utils.RefreshScheduler.MAX_CHAINED_DEFERRALS
+
+    def test_a_fresh_edit_resets_the_chain(self):
+        scheduler = self.scheduler(0.0)
+        now = 0.0
+        for _ in range(bridge_utils.RefreshScheduler.MAX_CHAINED_DEFERRALS):
+            now = scheduler.change(now + 0.3) + 0.5
+            scheduler.refreshed(now)
+        assert scheduler.change(now + 0.3) is None
+        later = now + 10.0
+        assert scheduler.change(later) == later
+        scheduler.refreshed(later + 0.5)
+        assert scheduler.change(later + 0.8) == later + 0.5 + self.GRACE
+
+    def test_a_refresh_from_a_save_does_not_count_as_chained(self):
+        scheduler = self.scheduler(0.0)
+        scheduler.refreshed(3.0)
+        scheduler.refreshed(6.0)
+        assert scheduler.chained == 0
 
     def test_refresh_flushes_the_depsgraph_while_muted(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         flush = live_src.index("view_layer.update()")
-        assert flush < live_src.index("_session.exporting = False\n        _session.last_refresh")
+        assert flush < live_src.index("_session.exporting = False\n        _session.scheduler.refreshed")
 
     def test_latency_constants(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
