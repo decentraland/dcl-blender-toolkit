@@ -1,12 +1,19 @@
-"""Tests for the Builder Live Preview bridge payload and its wiring."""
+"""Tests for the Builder Live Preview bridge, its payloads and its wiring."""
 
 import json
 import os
+import re
 import sys
+import threading
+import time
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 
 from tests._helpers import SRC_DIR, read_source
+
+ROOT_DIR = os.path.dirname(SRC_DIR)
 
 sys.path.insert(0, os.path.join(SRC_DIR, "ops"))
 
@@ -145,19 +152,105 @@ class TestWearableExportError:
         assert "no meshes" in bridge_utils.wearable_export_error([self.RIG_ARMATURE], selected_only=False)
 
 
+class TestSessionToken:
+    def test_the_token_segment_is_stripped(self):
+        assert bridge_utils.strip_session_token("/abc/state", "abc") == "/state"
+        assert bridge_utils.strip_session_token("/abc/model.glb", "abc") == "/model.glb"
+
+    @pytest.mark.parametrize("path", ["/state", "/abc", "/abd/state", "/abc", "//state", ""])
+    def test_anything_else_is_refused(self, path):
+        assert bridge_utils.strip_session_token(path, "abc") is None
+
+    def test_a_stopped_bridge_has_no_token_and_refuses_everything(self):
+        assert bridge_utils.strip_session_token("//state", "") is None
+
+
+@pytest.fixture
+def bridge():
+    server = bridge_utils.BridgeServer()
+    directory = server.start()
+    server.publish(bridge_utils.build_state_payload(version=1, is_emote=False, name="Hat", category="hat"))
+    with open(os.path.join(directory, bridge_utils.MODEL_FILE), "wb") as f:
+        f.write(b"glTF-bytes")
+    yield server
+    server.stop()
+
+
+def _get(url, **headers):
+    return urlopen(Request(url, headers=headers), timeout=5)
+
+
+class TestBridgeServer:
+    def test_the_bridge_url_carries_a_per_session_token(self, bridge):
+        assert bridge.url == f"http://127.0.0.1:{bridge.port}/{bridge.token}"
+        assert len(bridge.token) >= 32
+
+    def test_the_page_reads_state_and_model_through_the_token(self, bridge):
+        with _get(f"{bridge.url}/state") as response:
+            assert json.loads(response.read())["version"] == 1
+            # Any origin may read: the token, not the origin, is the gate.
+            assert response.headers["Access-Control-Allow-Origin"] == "*"
+        with _get(f"{bridge.url}/model.glb") as response:
+            assert response.read() == b"glTF-bytes"
+
+    @pytest.mark.parametrize("path", ["/state", "/model.glb", "/nope/state", "/nope/model.glb"])
+    def test_other_sites_fetching_loopback_directly_get_nothing(self, bridge, path):
+        with pytest.raises(HTTPError) as excinfo:
+            _get(f"http://127.0.0.1:{bridge.port}{path}")
+        assert excinfo.value.code == 404
+
+    def test_a_non_loopback_host_header_is_rejected(self, bridge):
+        with pytest.raises(HTTPError) as excinfo:
+            _get(f"{bridge.url}/state", Host="evil.example:80")
+        assert excinfo.value.code == 403
+
+    def test_stop_returns_at_once_while_a_long_poll_is_open(self, bridge):
+        # The page always holds /state?since=<current> open; stopping must not wait for it.
+        poll = threading.Thread(target=lambda: _get(f"{bridge.url}/state?since=1").read(), daemon=True)
+        poll.start()
+        time.sleep(0.2)
+        started = time.monotonic()
+        bridge.stop()
+        assert time.monotonic() - started < 1
+        poll.join(timeout=2)
+        assert not poll.is_alive()
+
+    def test_stop_forgets_the_token_and_directory(self, bridge):
+        directory = bridge.directory
+        bridge.stop()
+        assert bridge.token == ""
+        assert bridge.directory is None
+        assert not os.path.isdir(directory)
+
+    def test_a_new_session_gets_a_new_token(self, bridge):
+        first = bridge.token
+        bridge.stop()
+        bridge.start()
+        assert bridge.token and bridge.token != first
+
+
 class TestWiring:
     def test_server_binds_to_loopback_only(self):
         # Security tripwire: the bridge serves the local export to the browser,
         # so it must never listen on anything but loopback.
-        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        assert '("127.0.0.1", port)' in live_src
-        assert '"0.0.0.0"' not in live_src
+        bridge_src = read_source(os.path.join(SRC_DIR, "ops", "bridge_utils.py"))
+        assert '("127.0.0.1", port)' in bridge_src
+        assert '"0.0.0.0"' not in bridge_src
 
-    def test_cors_lets_any_page_read_the_bridge(self):
-        # The page may be served from any environment or a local dev server; the export is
-        # read-only and loopback-bound, so the origin is not restricted.
+    def test_handler_threads_are_not_joined_on_close(self):
+        bridge_src = read_source(os.path.join(SRC_DIR, "ops", "bridge_utils.py"))
+        assert "block_on_close = False" in bridge_src
+
+    def test_the_operator_hands_the_tokenised_url_to_the_page(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        assert 'self.send_header("Access-Control-Allow-Origin", "*")' in live_src
+        assert "bridge_url = _server.url" in live_src
+        assert 'f"http://127.0.0.1:{_server.port}"' not in live_src
+
+    def test_the_manifest_permission_fits_blenders_limit(self):
+        # Blender's extension validator caps permission texts at 64 characters.
+        manifest = read_source(os.path.join(ROOT_DIR, "blender_manifest.toml"))
+        for key, text in re.findall(r'^(\w+) = "([^"]*)"', manifest.split("[permissions]", 1)[1], re.M):
+            assert len(text) <= 64, f"{key} permission is {len(text)} characters"
 
     def test_wearable_exports_are_validated_before_running(self):
         # Both the initial export and live re-exports go through the scope
@@ -189,10 +282,15 @@ class TestWiring:
         assert "objects.active = armature" not in emote_src
 
     def test_a_failed_bind_removes_the_temp_directory(self):
-        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        start = live_src.split("    def start(self, port=0):", 1)[1].split("    def publish", 1)[0]
+        bridge_src = read_source(os.path.join(SRC_DIR, "ops", "bridge_utils.py"))
+        start = bridge_src.split("    def start(self, port=0):", 1)[1].split("    def publish", 1)[0]
         assert "except OSError:" in start
         assert "shutil.rmtree(self.directory, ignore_errors=True)" in start
+
+    def test_a_rebind_ends_the_session_exporting_into_the_old_folder(self):
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        execute = live_src.split("    def execute(self, context):\n        prefs = get_addon_preferences", 1)[1]
+        assert execute.index("stop_live_session()") < execute.index("_server.start(bridge_port)")
 
     def test_a_new_session_resets_the_refresh_timing(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
@@ -204,6 +302,33 @@ class TestWiring:
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
         load_pre = live_src.split("def _on_load_pre(", 1)[1].split("@persistent", 1)[0]
         assert "stop_live_preview()" in load_pre
+
+    def test_the_load_handler_lives_for_the_whole_addon(self):
+        # Removing a load_pre handler from inside load_pre makes Blender skip the next one.
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        init_src = read_source(os.path.join(SRC_DIR, "__init__.py"))
+        remove = live_src.split("def _remove_handlers(", 1)[1].split("\n\n\n", 1)[0]
+        assert "load_pre" not in remove
+        assert "load_pre" not in live_src.split("def _install_handlers(", 1)[1].split("\n\n\n", 1)[0]
+        assert "handlers.load_pre.append(_on_load_pre)" in live_src.split("def register_live_preview(", 1)[1]
+        assert "register_live_preview()" in init_src.split("def register():", 1)[1].split("def unregister", 1)[0]
+        assert "unregister_live_preview()" in init_src.split("def unregister():", 1)[1]
+
+    def test_refreshes_wait_for_modal_operators_to_finish(self):
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        timer = live_src.split("def _timer(", 1)[1].split("def _install_handlers", 1)[0]
+        assert "if _modal_operator_running():" in timer
+        assert timer.index("_modal_operator_running()") < timer.index("_session.dirty_at = None")
+        assert 'getattr(window, "modal_operators", ())' in live_src
+
+    def test_full_scene_exports_keep_hidden_objects_hidden(self):
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        assert "[obj for obj in bpy.context.view_layer.objects if obj.visible_get()]" in live_src
+        assert "scope_objects = list(bpy.context.view_layer.objects)" not in live_src
+
+    def test_the_panel_has_a_stop_button(self):
+        init_src = read_source(os.path.join(SRC_DIR, "__init__.py"))
+        assert init_src.count('row.operator(OBJECT_OT_stop_live_preview.bl_idname, text="", icon="X")') == 2
 
     def test_both_exporters_clear_the_active_object_around_the_gltf_export(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
@@ -258,10 +383,15 @@ class TestLongPoll:
         threading.Timer(0.05, live.publish, [""]).start()
         assert live.wait_for_change("1") == ""
 
-    def test_the_handler_long_polls_state(self):
-        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
-        assert 'parse_qs(query).get("since", [None])[0]' in live_src
-        assert "_server.live.wait_for_change(since)" in live_src
+    def test_the_handler_long_polls_state(self, bridge):
+        bridge.publish(bridge_utils.build_state_payload(version=1, is_emote=False, name="Hat"))
+        threading.Timer(
+            0.1, bridge.publish, [bridge_utils.build_state_payload(version=2, is_emote=False, name="Hat")]
+        ).start()
+        started = time.monotonic()
+        with _get(f"{bridge.url}/state?since=1") as response:
+            assert json.loads(response.read())["version"] == 2
+        assert 0.05 < time.monotonic() - started < 2
 
 
 class TestDirtyScheduling:
@@ -273,10 +403,19 @@ class TestDirtyScheduling:
     def test_the_first_edit_inside_the_window_is_deferred_to_its_end(self):
         assert bridge_utils.schedule_dirty(5.2, 5.0, self.GRACE, already_deferred=False) == (5.75, True)
 
-    def test_a_second_edit_inside_the_window_is_dropped(self):
-        # The exporter's own side effects land here after a deferred refresh; without this the
-        # session would re-export forever.
+    def test_a_second_edit_inside_the_window_is_coalesced(self):
+        # Several changes in one window share the refresh already deferred to its end.
         assert bridge_utils.schedule_dirty(5.3, 5.0, self.GRACE, already_deferred=True) == (None, True)
+
+    def test_an_edit_right_after_a_deferred_refresh_is_kept(self):
+        # Refresh at 5.0, a change at 5.2 is deferred to 5.75, the timer refreshes at ~6.25.
+        dirty_at, deferred = bridge_utils.schedule_dirty(5.2, 5.0, self.GRACE, already_deferred=False)
+        assert (dirty_at, deferred) == (5.75, True)
+        # _refresh resets the flag, so an edit at 6.55 is deferred again instead of dropped.
+        live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))
+        refresh = live_src.split("def _refresh(", 1)[1].split("def _is_relevant", 1)[0]
+        assert "_session.deferred_after_refresh = False" in refresh
+        assert bridge_utils.schedule_dirty(6.55, 6.25, self.GRACE, already_deferred=False) == (7.0, True)
 
     def test_refresh_flushes_the_depsgraph_while_muted(self):
         live_src = read_source(os.path.join(SRC_DIR, "ops", "live_preview.py"))

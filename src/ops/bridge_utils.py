@@ -1,18 +1,25 @@
-"""Payload helpers for the Builder Live Preview bridge.
+"""The Builder Live Preview bridge: a tiny local HTTP server and its payloads.
 
-The Builder's ``/live-preview`` page connects to a tiny local HTTP server
-exposed by this add-on: ``GET /state`` returns the JSON metadata built here and
-``GET /model.glb`` returns the latest export. The page polls ``/state`` and
-re-fetches the model whenever ``version`` moves, then hot-swaps it on the
+The Builder's ``/live-preview`` page connects to the bridge exposed by this
+add-on: ``GET /<token>/state`` returns the JSON metadata built here and
+``GET /<token>/model.glb`` returns the latest export. The page polls ``state``
+and re-fetches the model whenever ``version`` moves, then hot-swaps it on the
 avatar without reloading. Everything in this module is plain Python so it can
 be exercised without Blender.
 """
 
+import hmac
 import json
+import os
+import secrets
+import shutil
+import tempfile
 import threading
-from urllib.parse import quote, urlsplit
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, quote, urlsplit
 
 DEFAULT_PREVIEWER_URL = "https://decentraland.org/create/live-preview"
+MODEL_FILE = "model.glb"
 
 # Wearable categories accepted by the Builder (WearableCategory in @dcl/schemas).
 WEARABLE_CATEGORIES = (
@@ -61,6 +68,14 @@ def normalize_previewer_url(raw):
 def is_loopback_host(host_header, port):
     """True when a request's Host header names the bridge on loopback."""
     return (host_header or "").lower() in (f"127.0.0.1:{port}", f"localhost:{port}")
+
+
+def strip_session_token(path, token):
+    """``/<token>/state`` -> ``/state``, or None unless the first segment is this session's token."""
+    segment, slash, rest = path.lstrip("/").partition("/")
+    if not token or not slash or not hmac.compare_digest(segment.encode("utf-8"), token.encode("utf-8")):
+        return None
+    return "/" + rest
 
 
 def live_preview_url(page_url, bridge_url=""):
@@ -245,3 +260,144 @@ def schedule_dirty(now, last_refresh, grace, already_deferred):
     if already_deferred:
         return None, True
     return last_refresh + grace, True
+
+
+class _BridgeHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    # Never join handler threads on close: the page always holds a long-poll open.
+    block_on_close = False
+
+    def __init__(self, address, handler, bridge):
+        super().__init__(address, handler)
+        self.bridge = bridge
+
+
+class BridgeRequestHandler(BaseHTTPRequestHandler):
+    """Serves ``/<token>/state`` and ``/<token>/model.glb`` to any page that knows the token."""
+
+    # Longer than the long-poll, so idle connections cannot pin threads.
+    timeout = LONG_POLL_SECONDS + 5
+
+    def _send(self, code, content_type, body):
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        # Any origin: the page may come from any environment or a local dev server. The
+        # per-session token in the path is what keeps other sites out.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        # Chromium's private-network preflight for a public page reaching localhost.
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self):  # noqa: N802 — http.server naming
+        self._send(204, "text/plain", b"")
+
+    def do_GET(self):  # noqa: N802 — http.server naming
+        bridge = self.server.bridge
+        # Blocks DNS rebinding: a page whose own host resolves to 127.0.0.1 still sends its name.
+        if not is_loopback_host(self.headers.get("Host"), self.server.server_address[1]):
+            self._send(403, "text/plain", b"forbidden")
+            return
+        path, _, query = self.path.partition("?")
+        # Only the page opened with this session's bridge URL knows the token; any other
+        # site fetching 127.0.0.1 directly gets a 404 for every path.
+        path = strip_session_token(path, bridge.token)
+        if path is None:
+            self._send(404, "text/plain", b"not found")
+            return
+        state, model_path = bridge.snapshot()
+        if path == "/state" and state:
+            since = parse_qs(query).get("since", [None])[0]
+            if since is not None:
+                state = bridge.live.wait_for_change(since) or state
+            self._send(200, "application/json", state.encode("utf-8"))
+        elif path == f"/{MODEL_FILE}" and model_path:
+            try:
+                with open(model_path, "rb") as f:
+                    body = f.read()
+            except OSError:
+                # stop() may delete the directory between the snapshot and the read.
+                self._send(404, "text/plain", b"not found")
+            else:
+                self._send(200, "model/gltf-binary", body)
+        else:
+            self._send(404, "text/plain", b"not found")
+
+    def log_message(self, fmt, *args):
+        # Silence per-request logging; Blender's console is not a web server log.
+        pass
+
+
+class BridgeServer:
+    """Threaded HTTP server over a temporary export directory, bound to loopback."""
+
+    def __init__(self):
+        self._httpd = None
+        self._thread = None
+        self._lock = threading.Lock()
+        self.live = LiveState()
+        self.directory = None
+        self.token = ""
+
+    @property
+    def running(self):
+        return self._httpd is not None
+
+    @property
+    def port(self):
+        return self._httpd.server_address[1] if self._httpd else None
+
+    @property
+    def url(self):
+        """The bridge URL handed to the page; the token is part of the path."""
+        return f"http://127.0.0.1:{self.port}/{self.token}" if self._httpd else None
+
+    def start(self, port=0):
+        """Bind and serve, returning the export directory. Rebinding when ``port`` changes."""
+        if self.running:
+            if port and port != self.port:
+                self.stop()
+            else:
+                return self.directory
+
+        self.directory = tempfile.mkdtemp(prefix="dcl_live_preview_")
+        try:
+            self._httpd = _BridgeHTTPServer(("127.0.0.1", port), BridgeRequestHandler, self)
+        except OSError:
+            shutil.rmtree(self.directory, ignore_errors=True)
+            self.directory = None
+            raise
+        self.token = secrets.token_urlsafe(24)
+        self._thread = threading.Thread(target=self._httpd.serve_forever, name="dcl-live-preview", daemon=True)
+        self._thread.start()
+        return self.directory
+
+    def publish(self, state_payload):
+        self.live.publish(state_payload)
+
+    def snapshot(self):
+        """Read by the server thread; the state payload and model path move together."""
+        with self._lock:
+            model_path = os.path.join(self.directory, MODEL_FILE) if self.directory else None
+        return self.live.snapshot(), model_path
+
+    def stop(self):
+        # Release any long-poll first, or shutting down would wait on it.
+        self.live.publish("")
+        if self._httpd:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+        if self._thread:
+            self._thread.join(timeout=5)
+        if self.directory and os.path.isdir(self.directory):
+            shutil.rmtree(self.directory, ignore_errors=True)
+
+        self._httpd = None
+        self._thread = None
+        self.token = ""
+        with self._lock:
+            self.directory = None

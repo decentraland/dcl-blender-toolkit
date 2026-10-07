@@ -4,9 +4,12 @@ Previewing means three things: export the selection to a GLB, serve it from a
 short-lived local bridge, and open the Builder's ``/live-preview`` page, which
 polls the bridge and hot-swaps the model on a live avatar:
 
-    GET /state                 -> {"version", "type", "name", "category"}
-    GET /state?since=N         -> same, answered once version != N (or after 25 seconds)
-    GET /model.glb             -> the latest export
+    GET /<token>/state           -> {"version", "type", "name", "category"}
+    GET /<token>/state?since=N   -> same, answered once version != N (or after 25 seconds)
+    GET /<token>/model.glb       -> the latest export
+
+The token is generated per session, so only the page opened with the bridge
+URL can read the export; other sites reaching 127.0.0.1 get a 404.
 
 Overrides, body shape and emote playback are all chosen on the Builder page;
 the add-on only exports and serves. Refresh is always live: saving the .blend
@@ -17,31 +20,27 @@ exporter would otherwise force Object Mode) and edit-mode meshes are exported
 from a throwaway copy. The
 bridge binds to 127.0.0.1 (OS-assigned port unless one is set in the add-on preferences),
 its URL is passed to the page as the ``bridge`` query param, and it is torn
-down on Stop Live Preview or when the add-on is unregistered.
+down on Stop Live Preview, when another file is opened or when the add-on is
+unregistered.
 """
 
 import os
-import shutil
-import tempfile
-import threading
 import time
 import webbrowser
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs
 
 import bpy
 from bpy.app.handlers import persistent
 
 from .bridge_utils import (
     DEFAULT_PREVIEWER_URL,
+    MODEL_FILE,
     REFERENCE_AVATAR_COLLECTIONS,
     WEARABLE_CATEGORIES,
-    LiveState,
+    BridgeServer,
     build_state_payload,
     emote_export_error,
     emote_validation_error,
     is_emote_validation_failure,
-    is_loopback_host,
     live_preview_url,
     normalize_previewer_url,
     readable_category,
@@ -51,142 +50,18 @@ from .bridge_utils import (
 )
 from .validate_emote import run_emote_validation
 
-MODEL_FILE = "model.glb"
-
 # Re-export only once the scene has been quiet for this long, so dragging a
 # vertex or scrubbing a slider does not export on every mouse move.
 DEBOUNCE_SECONDS = 0.5
 # The refresh itself dirties the depsgraph (the emote exporter toggles
 # visibility and scrubs frames). _refresh flushes that while the handler is
-# muted; anything still landing this close after a refresh is handled by
-# schedule_dirty so the session can neither lose an edit nor loop forever.
+# muted; anything still landing this close after a refresh is coalesced by
+# schedule_dirty into one deferred refresh so an edit is never lost.
 _POST_REFRESH_GRACE = 0.75
 _TIMER_INTERVAL = 0.2
 
 
-# ---------------------------------------------------------------------------
-# Bridge server
-# ---------------------------------------------------------------------------
-
-
-class _BridgeRequestHandler(BaseHTTPRequestHandler):
-    """Serves /state and /model.glb to any page."""
-
-    # Longer than the 25 second long-poll, so idle connections cannot pin threads.
-    timeout = 30
-
-    def _send(self, code, content_type, body):
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        # Any origin: the page may come from any environment or a local dev server, and the
-        # bridge only serves a read-only export on loopback.
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        # Chromium's private-network preflight for a public page reaching localhost.
-        self.send_header("Access-Control-Allow-Private-Network", "true")
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_OPTIONS(self):  # noqa: N802 — http.server naming
-        self._send(204, "text/plain", b"")
-
-    def do_GET(self):  # noqa: N802 — http.server naming
-        # Blocks DNS rebinding: a page whose own host resolves to 127.0.0.1 still sends its name.
-        if not is_loopback_host(self.headers.get("Host"), self.server.server_address[1]):
-            self._send(403, "text/plain", b"forbidden")
-            return
-        path, _, query = self.path.partition("?")
-        state, model_path = _server.snapshot()
-        if path == "/state" and state:
-            since = parse_qs(query).get("since", [None])[0]
-            if since is not None:
-                state = _server.live.wait_for_change(since) or state
-            self._send(200, "application/json", state.encode("utf-8"))
-        elif path == f"/{MODEL_FILE}" and model_path:
-            try:
-                with open(model_path, "rb") as f:
-                    body = f.read()
-            except OSError:
-                # stop() may delete the directory between the snapshot and the read.
-                self._send(404, "text/plain", b"not found")
-            else:
-                self._send(200, "model/gltf-binary", body)
-        else:
-            self._send(404, "text/plain", b"not found")
-
-    def log_message(self, fmt, *args):
-        # Silence per-request logging; Blender's console is not a web server log.
-        pass
-
-
-class _BridgeServer:
-    """Threaded HTTP server over a temporary export directory."""
-
-    def __init__(self):
-        self._httpd = None
-        self._thread = None
-        self._lock = threading.Lock()
-        self.live = LiveState()
-        self.directory = None
-
-    @property
-    def running(self):
-        return self._httpd is not None
-
-    @property
-    def port(self):
-        return self._httpd.server_address[1] if self._httpd else None
-
-    def start(self, port=0):
-        if self.running:
-            if port and port != self.port:
-                # An explicitly requested port beats the one already bound.
-                self.stop()
-            else:
-                return self.directory
-
-        self.directory = tempfile.mkdtemp(prefix="dcl_live_preview_")
-        try:
-            self._httpd = ThreadingHTTPServer(("127.0.0.1", port), _BridgeRequestHandler)
-        except OSError:
-            shutil.rmtree(self.directory, ignore_errors=True)
-            self.directory = None
-            raise
-        self._httpd.daemon_threads = True
-        self._thread = threading.Thread(target=self._httpd.serve_forever, name="dcl-live-preview", daemon=True)
-        self._thread.start()
-        return self.directory
-
-    def publish(self, state_payload):
-        self.live.publish(state_payload)
-
-    def snapshot(self):
-        """Read by the server thread; the state payload and model path move together."""
-        with self._lock:
-            model_path = os.path.join(self.directory, MODEL_FILE) if self.directory else None
-        return self.live.snapshot(), model_path
-
-    def stop(self):
-        if self._httpd:
-            self._httpd.shutdown()
-            self._httpd.server_close()
-        if self._thread:
-            self._thread.join(timeout=5)
-        if self.directory and os.path.isdir(self.directory):
-            shutil.rmtree(self.directory, ignore_errors=True)
-
-        self._httpd = None
-        self._thread = None
-        # Also releases any long-poll still waiting on a version change.
-        self.live.publish("")
-        with self._lock:
-            self.directory = None
-
-
-_server = _BridgeServer()
+_server = BridgeServer()
 
 
 # ---------------------------------------------------------------------------
@@ -257,9 +132,22 @@ def stop_live_session():
 
 
 def stop_live_preview():
-    """Tear the bridge down. Called from the add-on's unregister()."""
+    """Tear the bridge down."""
     stop_live_session()
     _server.stop()
+
+
+def register_live_preview():
+    # Installed once for the add-on's lifetime: a handler that removes itself from
+    # load_pre while Blender iterates that list makes the next add-on's handler skip.
+    if _on_load_pre not in bpy.app.handlers.load_pre:
+        bpy.app.handlers.load_pre.append(_on_load_pre)
+
+
+def unregister_live_preview():
+    stop_live_preview()
+    if _on_load_pre in bpy.app.handlers.load_pre:
+        bpy.app.handlers.load_pre.remove(_on_load_pre)
 
 
 def _refresh():
@@ -280,6 +168,8 @@ def _refresh():
                 pass
         _session.exporting = False
         _session.last_refresh = time.monotonic()
+        # A change deferred into this refresh has been exported; the next one is an edit.
+        _session.deferred_after_refresh = False
 
     if error:
         print("DCL live preview: refresh skipped — " + error.replace("\n", " | "))
@@ -318,7 +208,8 @@ def _on_save_post(*_args):
 def _on_load_pre(*_args):
     # The session belongs to the file it was started from; keeping the bridge up
     # would serve the previous file's model to the open page.
-    stop_live_preview()
+    if _server.running:
+        stop_live_preview()
 
 
 @persistent
@@ -337,10 +228,20 @@ def _on_depsgraph_update(scene, depsgraph):
         _session.dirty_at = dirty_at
 
 
+def _modal_operator_running():
+    """True during a transform drag, knife cut or sculpt stroke (Blender 4.2+ lists them)."""
+    return any(
+        getattr(window, "modal_operators", ()) for manager in bpy.data.window_managers for window in manager.windows
+    )
+
+
 def _timer():
     if not _session.active:
         return None
     if _session.dirty_at is not None and time.monotonic() - _session.dirty_at >= DEBOUNCE_SECONDS:
+        # Exporting under a running modal operator would fight it; stay dirty and retry.
+        if _modal_operator_running():
+            return _TIMER_INTERVAL
         _session.dirty_at = None
         _refresh()
     return _TIMER_INTERVAL
@@ -352,8 +253,6 @@ def _install_handlers():
         handlers.save_post.append(_on_save_post)
     if _on_depsgraph_update not in handlers.depsgraph_update_post:
         handlers.depsgraph_update_post.append(_on_depsgraph_update)
-    if _on_load_pre not in handlers.load_pre:
-        handlers.load_pre.append(_on_load_pre)
     if not bpy.app.timers.is_registered(_timer):
         bpy.app.timers.register(_timer, first_interval=_TIMER_INTERVAL)
 
@@ -363,7 +262,6 @@ def _remove_handlers():
     for collection, fn in (
         (handlers.save_post, _on_save_post),
         (handlers.depsgraph_update_post, _on_depsgraph_update),
-        (handlers.load_pre, _on_load_pre),
     ):
         if fn in collection:
             collection.remove(fn)
@@ -428,7 +326,8 @@ def _export_wearable_glb(out_path, selected_only):
         in_view_layer = bpy.context.view_layer.objects
         scope_objects = selected + [obj for obj in extras if obj.name in in_view_layer]
     else:
-        scope_objects = list(bpy.context.view_layer.objects)
+        # What the user hid on purpose (helpers, colliders, alternates) stays out of the preview.
+        scope_objects = [obj for obj in bpy.context.view_layer.objects if obj.visible_get()]
 
     scope = [(obj.type, [coll.name for coll in obj.users_collection]) for obj in scope_objects]
     error = wearable_export_error(scope, selected_only=selected_only)
@@ -612,6 +511,9 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
 
         is_emote = self.content_type == "EMOTE"
 
+        if _server.running and bridge_port and bridge_port != _server.port:
+            # Rebinding deletes the folder the running session exports into.
+            stop_live_session()
         try:
             directory = _server.start(bridge_port)
         except OSError as exc:
@@ -636,7 +538,7 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
             category=self.category,
         )
 
-        bridge_url = f"http://127.0.0.1:{_server.port}"
+        bridge_url = _server.url
         try:
             webbrowser.open(live_preview_url(previewer_url, bridge_url))
         except Exception as exc:
@@ -645,7 +547,7 @@ class OBJECT_OT_preview_in_builder(bpy.types.Operator):
             self.report({"ERROR"}, f"Could not open the browser: {exc}")
             return {"CANCELLED"}
 
-        self.report({"INFO"}, f"Streaming to the Builder Live Preview page (bridge on {bridge_url}).")
+        self.report({"INFO"}, f"Streaming to the Builder Live Preview page (bridge on 127.0.0.1:{_server.port}).")
         return {"FINISHED"}
 
 

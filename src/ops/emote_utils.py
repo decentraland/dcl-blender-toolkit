@@ -55,10 +55,20 @@ def is_avatar_armature(obj):
 
 
 def is_prop_armature(obj):
-    """True when the armature looks like an emote prop rig rather than the avatar rig."""
-    if not obj or obj.type != "ARMATURE" or not obj.data:
+    """True when the armature follows the emote prop convention.
+
+    A prop rig has ``Prop_*`` bones (``Prop_Root`` in the shipped rig), an active
+    action ending in ``_Prop``, or the ``Armature_Prop`` object name. Any other
+    non-avatar armature (a mocap or retarget source) is not a prop.
+    """
+    if not obj or obj.type != "ARMATURE" or not obj.data or is_avatar_armature(obj):
         return False
-    return not is_avatar_armature(obj)
+    if any(bone.name.startswith("Prop_") for bone in obj.data.bones):
+        return True
+    action = get_active_action(obj)
+    if action is not None and action.name.lower().endswith("_prop"):
+        return True
+    return obj.name.startswith(PROP_EXPORT_NAME)
 
 
 def find_avatar_armature(context):
@@ -84,7 +94,7 @@ def find_avatar_armature(context):
 
 
 def find_prop_armatures(context, avatar_armature=None):
-    """Return every scene armature that is not the avatar rig."""
+    """Return every scene armature that follows the prop convention, minus the avatar rig."""
     if avatar_armature is None:
         avatar_armature = find_avatar_armature(context)
     return [obj for obj in context.scene.objects if obj is not avatar_armature and is_prop_armature(obj)]

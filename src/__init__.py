@@ -47,7 +47,8 @@ from .ops.live_preview import (
     OBJECT_OT_preview_in_builder,
     OBJECT_OT_reset_previewer_url,
     OBJECT_OT_stop_live_preview,
-    stop_live_preview,
+    register_live_preview,
+    unregister_live_preview,
 )
 from .ops.merge_materials import OBJECT_OT_merge_materials
 from .ops.particle_to_armature import OBJECT_OT_particles_to_armature_converter
@@ -414,9 +415,11 @@ def _draw_avatars(layout, props):
         _op(row, OBJECT_OT_link_avatar_wearables.bl_idname, "Avatar Shapes", "FRIENDS", "ARMATURE_DATA")
         _op(row, OBJECT_OT_avatar_limitations.bl_idname, "Wearable Limits", "SHIRT_SPORT", "INFO")
         col.separator(factor=0.3)
+        row = col.row(align=True)
         _op(
-            col, OBJECT_OT_preview_in_builder.bl_idname, "Preview Wearable", "EYE_DOTTED", "HIDE_OFF"
+            row, OBJECT_OT_preview_in_builder.bl_idname, "Preview Wearable", "EYE_DOTTED", "HIDE_OFF"
         ).content_type = "WEARABLE"
+        row.operator(OBJECT_OT_stop_live_preview.bl_idname, text="", icon="X")
 
 
 def _draw_emotes(layout, props):
@@ -443,9 +446,11 @@ def _draw_emotes(layout, props):
         col.separator(factor=0.3)
 
         _op(col, OBJECT_OT_validate_emote.bl_idname, "Validate Emote", "PROGRESS_CHECK", "CHECKMARK")
+        row = col.row(align=True)
         _op(
-            col, OBJECT_OT_preview_in_builder.bl_idname, "Preview Emote", "EYE_DOTTED", "HIDE_OFF"
+            row, OBJECT_OT_preview_in_builder.bl_idname, "Preview Emote", "EYE_DOTTED", "HIDE_OFF"
         ).content_type = "EMOTE"
+        row.operator(OBJECT_OT_stop_live_preview.bl_idname, text="", icon="X")
         col.separator(factor=0.3)
 
         settings = col.box()
@@ -748,6 +753,8 @@ def register():
     for cls in classes:
         register_class(cls)
 
+    register_live_preview()
+
     # Register the single PropertyGroup pointer on Scene
     bpy.types.Scene.dcl_tools = bpy.props.PointerProperty(type=DCLToolsSceneProperties)
 
@@ -766,7 +773,7 @@ def register():
 
 def unregister():
     # Tear down the live preview bridge thread before the operator classes disappear.
-    stop_live_preview()
+    unregister_live_preview()
 
     for cls in reversed(classes):
         unregister_class(cls)

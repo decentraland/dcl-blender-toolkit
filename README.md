@@ -91,10 +91,12 @@ hot-swaps in place: no page reloads, nothing uploaded.
 **How it works:** the add-on exports a GLB to a temporary folder and serves a tiny local bridge bound to
 `127.0.0.1` (OS-assigned port, or the one set in the add-on preferences):
 
-- `GET /state` — `{"version", "type", "name", "category"}`
-- `GET /model.glb` — the latest export
+- `GET /<token>/state` — `{"version", "type", "name", "category"}`
+- `GET /<token>/model.glb` — the latest export
 
-The Builder's `/live-preview` page polls `/state` and re-fetches the model whenever `version` moves, feeding it
+The token is generated per session and travels only in the bridge URL handed to the page, so other websites open
+in the browser cannot read the export even though the bridge answers any origin. The Builder's `/live-preview`
+page polls `state` and re-fetches the model whenever `version` moves, feeding it
 straight into the avatar as a blob. Refresh is always live: saving the .blend re-exports immediately, and scene
 edits re-export after a short pause (~1.5 s of inactivity), so you can sculpt, tweak materials or adjust keyframes
 and watch the avatar update. Your mode is never touched: Edit, Pose and paint sessions keep going while the preview
@@ -118,10 +120,13 @@ the Builder page: category and overrides, body shape, avatar randomization, emot
 | **Import DCL Rig** | Append the official Decentraland avatar rig into the scene (30 fps, 1-300 frame range) |
 | **Add Prop** | Import the Prop collection for emotes with hand-held objects |
 | **Limit Area Reference** | Import the animation area reference (ground plane, boundary circles, area box) |
-| **Create Emote Action** | Create a new action on the avatar armature, plus a matching `_Prop` action on each prop rig |
+| **Create Emote Action** | Create a new action on the avatar armature, plus a matching `_Prop` action on the prop rig |
 | **Set Boundary Keyframes** | Automatically set deform-bone boundary keyframes at start/end frames, on the avatar and prop rigs |
 | **Validate Emote** | Pre-flight check: fps, frame length, action count, boundary keyframes, root displacement, prop rig geometry/action |
 | **Export Emote GLB** | Export emote animation to GLB with DCL settings and validation preflight; includes prop rigs and their geometry |
+
+A prop rig is any armature with `Prop_*` bones (the one **Add Prop** imports), an active action ending in `_Prop`, or
+named `Armature_Prop`. Other armatures in the file, such as mocap or retarget sources, are left alone.
 
 ### Materials & Textures
 

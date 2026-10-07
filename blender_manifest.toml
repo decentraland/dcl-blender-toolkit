@@ -23,4 +23,4 @@ paths_exclude_pattern = ["__pycache__/", "*.pyc"]
 
 [permissions]
 files = "Import/export glTF files and Decentraland assets"
-network = "Open Decentraland documentation URLs in browser and stream wearable/emote previews to the Builder Live Preview page over a local 127.0.0.1 server"
+network = "Open docs and stream previews to the Builder via 127.0.0.1"

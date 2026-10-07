@@ -45,7 +45,7 @@ class OBJECT_OT_create_emote_action(bpy.types.Operator):
 
     create_prop_action: bpy.props.BoolProperty(
         name="Create Prop Action",
-        description="Also create a matching action on each prop armature in the scene",
+        description="Also create a matching _Prop action on the prop rig",
         default=True,
     )
 
@@ -61,20 +61,28 @@ class OBJECT_OT_create_emote_action(bpy.types.Operator):
         source_action = arm.animation_data.action or _find_starting_pose_action()
 
         prop_armatures = find_prop_armatures(context, arm) if self.create_prop_action else []
+        # An emote carries one prop rig, paired by name ('X_Avatar' with 'X_Prop'), so
+        # only the first detected rig gets an action: a second one could never export.
+        prop_armature = prop_armatures[0] if prop_armatures else None
+        skipped = prop_armatures[1:]
         base_name = sanitize_emote_name(self.emote_name)
 
         # Decentraland tells the two clips apart by the _Avatar / _Prop suffixes, so
         # only add them once a prop rig is actually part of the emote.
-        avatar_name = f"{base_name}_Avatar" if prop_armatures else base_name
+        avatar_name = f"{base_name}_Avatar" if prop_armature else base_name
         avatar_action = _assign_action(arm, avatar_name, source_action)
 
         created = [avatar_action.name]
-        for index, prop_armature in enumerate(prop_armatures):
+        if prop_armature:
             prop_source = prop_armature.animation_data.action if prop_armature.animation_data else None
-            suffix = "_Prop" if index == 0 else f"_Prop_{index + 1}"
-            created.append(_assign_action(prop_armature, f"{base_name}{suffix}", prop_source).name)
+            created.append(_assign_action(prop_armature, f"{base_name}_Prop", prop_source).name)
 
-        self.report({"INFO"}, f"Created action(s): {', '.join(created)}")
+        message = f"Created action(s): {', '.join(created)}"
+        if skipped:
+            names = ", ".join(obj.name for obj in skipped)
+            self.report({"WARNING"}, f"{message}. Skipped {names}: emotes support a single prop rig.")
+        else:
+            self.report({"INFO"}, message)
         return {"FINISHED"}
 
     def draw(self, context):
@@ -85,7 +93,9 @@ class OBJECT_OT_create_emote_action(bpy.types.Operator):
             layout.prop(self, "create_prop_action")
             layout.label(text=f"{len(prop_armatures)} prop rig(s) detected", icon="OBJECT_DATA")
             if len(prop_armatures) > 1:
-                layout.label(text="Emotes support one prop rig: only the _Prop action exports", icon="ERROR")
+                layout.label(
+                    text=f"Emotes support one prop rig: only {prop_armatures[0].name} gets an action", icon="ERROR"
+                )
         layout.label(text="Allowed format: Capitalized_Words", icon="INFO")
 
     def invoke(self, context, event):

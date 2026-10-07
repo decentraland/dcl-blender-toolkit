@@ -92,6 +92,20 @@ class TestArmatureIdentification:
         context = FakeContext(objects, active=avatar)
         assert emote_utils.find_prop_armatures(context, avatar) == [prop]
 
+    def test_a_mocap_or_retarget_rig_is_not_a_prop(self):
+        source = FakeObject("mixamorig", "ARMATURE", ["mixamorig:Hips", "mixamorig:Spine"])
+        assert not emote_utils.is_prop_armature(source)
+        avatar = FakeObject("Armature", "ARMATURE", AVATAR_BONES)
+        assert emote_utils.find_prop_armatures(FakeContext([avatar, source], active=avatar), avatar) == []
+
+    def test_a_rig_animated_by_a_prop_action_is_a_prop(self):
+        rig = FakeObject("Gun_Rig", "ARMATURE", ["root", "trigger"])
+        rig.animation_data = type("AnimData", (), {"action": type("Action", (), {"name": "Invaders_Prop"})()})()
+        assert emote_utils.is_prop_armature(rig)
+
+    def test_the_imported_prop_rig_name_counts(self):
+        assert emote_utils.is_prop_armature(FakeObject("Armature_Prop.001", "ARMATURE", ["root"]))
+
 
 class TestEmoteExportObjectSet:
     def test_prop_rig_and_its_geometry_are_included(self):
@@ -168,6 +182,12 @@ class TestActionNaming:
         assert "find_prop_armatures" in src
         assert "_Avatar" in src
         assert "_Prop" in src
+
+    def test_only_one_prop_action_is_created(self):
+        # A second rig would get '_Prop_2', which pair_prop_actions never matches.
+        src = read_source(os.path.join(SRC_DIR, "ops", "emote_actions.py"))
+        assert "_Prop_" not in src
+        assert "skipped = prop_armatures[1:]" in src
 
 
 class TestRotationDataPath:
