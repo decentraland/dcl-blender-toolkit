@@ -35,9 +35,9 @@ class OBJECT_OT_link_avatar_wearables(bpy.types.Operator):
         name="Avatar Shape",
         description="Choose the avatar shape to import for wearable development",
         items=[
-            ("A", "Shape A", "Import DCLAvatar_ShapeA collection from AvatarShape_A.blend"),
-            ("B", "Shape B", "Import DCLAvatar_ShapeB collection from AvatarShape_B.blend"),
-            ("BOTH", "Both Shapes", "Import both Shape A and Shape B collections"),
+            ("A", "Shape A", "Import the male avatar base (Shape A) for wearable development"),
+            ("B", "Shape B", "Import the female avatar base (Shape B) for wearable development"),
+            ("BOTH", "Both Shapes", "Import both Shape A and Shape B avatar bases"),
         ],
         default="A",
     )
@@ -60,51 +60,43 @@ class OBJECT_OT_link_avatar_wearables(bpy.types.Operator):
         current_active = context.active_object
 
         imported_collections = []
+        # Maps the internal collection name (from disk) to the user-facing shape letter,
+        # so the resulting editable collection is named after the letter the user picked.
+        editable_letter_by_collection = {}
+
+        # The .blend files on disk are swapped relative to the UI letters: AvatarShape_A.blend
+        # holds the female base and AvatarShape_B.blend holds the male base. Map the user-facing
+        # letter to the file that actually contains the matching avatar.
+        shape_sources = {
+            "A": ("AvatarShape_B.blend", "DCLAvatar_ShapeB"),
+            "B": ("AvatarShape_A.blend", "DCLAvatar_ShapeA"),
+        }
+
+        selected_letters = ["A", "B"] if self.avatar_shape == "BOTH" else [self.avatar_shape]
 
         try:
-            if self.avatar_shape in ["A", "BOTH"]:
-                # Import Shape A
-                blend_file_a = os.path.join(temp_dir, "AvatarShape_A.blend")
-                collection_name_a = "DCLAvatar_ShapeA"
+            for letter in selected_letters:
+                blend_filename, collection_name = shape_sources[letter]
+                blend_file = os.path.join(temp_dir, blend_filename)
 
-                if os.path.exists(blend_file_a):
-                    with bpy.data.libraries.load(blend_file_a, link=True) as (data_from, data_to):
-                        if collection_name_a in data_from.collections:
-                            data_to.collections = [collection_name_a]
-                        else:
-                            self.report({"WARNING"}, f"Collection '{collection_name_a}' not found in {blend_file_a}")
+                if not os.path.exists(blend_file):
+                    self.report({"WARNING"}, f"Blend file not found: {blend_file}")
+                    continue
 
-                    if collection_name_a in bpy.data.collections:
-                        collection_a = bpy.data.collections[collection_name_a]
-                        if collection_a.name not in context.scene.collection.children:
-                            context.scene.collection.children.link(collection_a)
-                        imported_collections.append(collection_name_a)
+                with bpy.data.libraries.load(blend_file, link=True) as (data_from, data_to):
+                    if collection_name in data_from.collections:
+                        data_to.collections = [collection_name]
                     else:
-                        self.report({"ERROR"}, f"Failed to link collection '{collection_name_a}'")
+                        self.report({"WARNING"}, f"Collection '{collection_name}' not found in {blend_file}")
+
+                if collection_name in bpy.data.collections:
+                    collection = bpy.data.collections[collection_name]
+                    if collection.name not in context.scene.collection.children:
+                        context.scene.collection.children.link(collection)
+                    imported_collections.append(collection_name)
+                    editable_letter_by_collection[collection_name] = letter
                 else:
-                    self.report({"WARNING"}, f"Blend file not found: {blend_file_a}")
-
-            if self.avatar_shape in ["B", "BOTH"]:
-                # Import Shape B
-                blend_file_b = os.path.join(temp_dir, "AvatarShape_B.blend")
-                collection_name_b = "DCLAvatar_ShapeB"
-
-                if os.path.exists(blend_file_b):
-                    with bpy.data.libraries.load(blend_file_b, link=True) as (data_from, data_to):
-                        if collection_name_b in data_from.collections:
-                            data_to.collections = [collection_name_b]
-                        else:
-                            self.report({"WARNING"}, f"Collection '{collection_name_b}' not found in {blend_file_b}")
-
-                    if collection_name_b in bpy.data.collections:
-                        collection_b = bpy.data.collections[collection_name_b]
-                        if collection_b.name not in context.scene.collection.children:
-                            context.scene.collection.children.link(collection_b)
-                        imported_collections.append(collection_name_b)
-                    else:
-                        self.report({"ERROR"}, f"Failed to link collection '{collection_name_b}'")
-                else:
-                    self.report({"WARNING"}, f"Blend file not found: {blend_file_b}")
+                    self.report({"ERROR"}, f"Failed to link collection '{collection_name}'")
 
             if imported_collections:
                 # Duplicate collections to make them editable
@@ -113,8 +105,12 @@ class OBJECT_OT_link_avatar_wearables(bpy.types.Operator):
                     if collection_name in bpy.data.collections:
                         original_collection = bpy.data.collections[collection_name]
 
-                        # Create a new editable collection
-                        editable_name = f"{collection_name}_Editable"
+                        # Create a new editable collection, named after the user-facing letter
+                        # (which may differ from the internal collection name due to the file swap).
+                        user_letter = editable_letter_by_collection.get(collection_name)
+                        editable_name = (
+                            f"DCLAvatar_Shape{user_letter}_Editable" if user_letter else f"{collection_name}_Editable"
+                        )
                         if editable_name in bpy.data.collections:
                             # Remove existing editable collection
                             bpy.data.collections.remove(bpy.data.collections[editable_name])

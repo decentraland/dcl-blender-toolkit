@@ -40,6 +40,7 @@ from .ops.generate_thumbnail import (
 )
 from .ops.import_composite import OBJECT_OT_import_composite
 from .ops.import_dcl_rig import OBJECT_OT_import_dcl_limit_area, OBJECT_OT_import_dcl_prop, OBJECT_OT_import_dcl_rig
+from .ops.import_template_wearable import OBJECT_OT_import_template_wearable
 from .ops.install_theme import OBJECT_OT_install_dcl_theme
 from .ops.link_avatar_wearables import OBJECT_OT_link_avatar_wearables
 from .ops.merge_materials import OBJECT_OT_merge_materials
@@ -369,6 +370,7 @@ def _draw_avatars(layout, props):
         row = col.row(align=True)
         _op(row, OBJECT_OT_link_avatar_wearables.bl_idname, "Avatar Shapes", "FRIENDS", "ARMATURE_DATA")
         _op(row, OBJECT_OT_avatar_limitations.bl_idname, "Wearable Limits", "SHIRT_SPORT", "INFO")
+        _op(col, OBJECT_OT_import_template_wearable.bl_idname, "Create from Template", "ASSET", "IMPORT")
 
 
 def _draw_emotes(layout, props):
@@ -658,6 +660,7 @@ classes = (
     OBJECT_OT_remove_specular,
     OBJECT_OT_enable_backface_culling,
     OBJECT_OT_link_avatar_wearables,
+    OBJECT_OT_import_template_wearable,
     OBJECT_OT_particles_to_armature_converter,
     OBJECT_OT_avatar_limitations,
     OBJECT_OT_replace_materials,

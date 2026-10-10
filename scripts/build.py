@@ -113,14 +113,19 @@ def build_zip(version_str):
                 )
                 zf.write(filepath, arcname)
 
-        # Add assets (skip Blender backup files)
+        # Add assets recursively (skip Blender backup files and OS metadata)
         if os.path.isdir(ASSETS_DIR):
-            for filename in os.listdir(ASSETS_DIR):
-                if filename.endswith(".blend1"):
-                    continue
-                filepath = os.path.join(ASSETS_DIR, filename)
-                if os.path.isfile(filepath):
-                    arcname = os.path.join(PACKAGE_NAME, "assets", filename)
+            for dirpath, dirnames, filenames in os.walk(ASSETS_DIR):
+                dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+                for filename in filenames:
+                    if filename.endswith(".blend1") or filename == ".DS_Store":
+                        continue
+                    filepath = os.path.join(dirpath, filename)
+                    arcname = os.path.join(
+                        PACKAGE_NAME,
+                        "assets",
+                        os.path.relpath(filepath, ASSETS_DIR),
+                    )
                     zf.write(filepath, arcname)
 
         # Add blender_manifest.toml at package root
