@@ -42,6 +42,14 @@ from .ops.import_composite import OBJECT_OT_import_composite
 from .ops.import_dcl_rig import OBJECT_OT_import_dcl_limit_area, OBJECT_OT_import_dcl_prop, OBJECT_OT_import_dcl_rig
 from .ops.install_theme import OBJECT_OT_install_dcl_theme
 from .ops.link_avatar_wearables import OBJECT_OT_link_avatar_wearables
+from .ops.live_preview import (
+    DEFAULT_PREVIEWER_URL,
+    OBJECT_OT_preview_in_builder,
+    OBJECT_OT_reset_previewer_url,
+    OBJECT_OT_stop_live_preview,
+    register_live_preview,
+    unregister_live_preview,
+)
 from .ops.merge_materials import OBJECT_OT_merge_materials
 from .ops.particle_to_armature import OBJECT_OT_particles_to_armature_converter
 from .ops.quick_export_gltf import OBJECT_OT_export_scene, OBJECT_OT_quick_export_gltf, OBJECT_OT_update_all_exported
@@ -316,6 +324,41 @@ class DCLToolsSceneProperties(bpy.types.PropertyGroup):
 
 
 # ---------------------------------------------------------------------------
+# AddonPreferences
+# ---------------------------------------------------------------------------
+
+
+class DCLToolsPreferences(bpy.types.AddonPreferences):
+    """Add-on level settings shared by every scene."""
+
+    bl_idname = __package__
+
+    previewer_url: bpy.props.StringProperty(
+        name="Previewer URL",
+        description="Live Preview page opened by Preview Wearable / Preview Emote",
+        default=DEFAULT_PREVIEWER_URL,
+    )
+
+    bridge_port: bpy.props.IntProperty(
+        name="Blender Port",
+        description="Port the local bridge listens on. 0 picks a free port automatically",
+        default=0,
+        min=0,
+        max=65535,
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row(align=True)
+        row.prop(self, "previewer_url")
+        row.operator(OBJECT_OT_reset_previewer_url.bl_idname, text="", icon="LOOP_BACK")
+        layout.label(text="A locally served page (http://localhost:3000/live-preview) works too.", icon="INFO")
+        layout.prop(self, "bridge_port")
+        layout.separator()
+        layout.operator(OBJECT_OT_stop_live_preview.bl_idname, icon="X")
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -336,12 +379,14 @@ def _section_header(layout, props, prop_name, label):
 
 
 def _op(target, bl_idname, text, icon_name, fallback_icon):
-    """Draw an operator button using a custom Tabler icon if available, otherwise fallback."""
+    """Draw an operator button using a custom Tabler icon if available, otherwise fallback.
+
+    Returns the operator's properties so callers can preset them.
+    """
     ico = icon_loader.get_icon(icon_name)
     if ico:
-        target.operator(bl_idname, text=text, icon_value=ico)
-    else:
-        target.operator(bl_idname, text=text, icon=fallback_icon)
+        return target.operator(bl_idname, text=text, icon_value=ico)
+    return target.operator(bl_idname, text=text, icon=fallback_icon)
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +414,12 @@ def _draw_avatars(layout, props):
         row = col.row(align=True)
         _op(row, OBJECT_OT_link_avatar_wearables.bl_idname, "Avatar Shapes", "FRIENDS", "ARMATURE_DATA")
         _op(row, OBJECT_OT_avatar_limitations.bl_idname, "Wearable Limits", "SHIRT_SPORT", "INFO")
+        col.separator(factor=0.3)
+        row = col.row(align=True)
+        _op(
+            row, OBJECT_OT_preview_in_builder.bl_idname, "Preview Wearable", "EYE_DOTTED", "HIDE_OFF"
+        ).content_type = "WEARABLE"
+        row.operator(OBJECT_OT_stop_live_preview.bl_idname, text="", icon="X")
 
 
 def _draw_emotes(layout, props):
@@ -395,6 +446,11 @@ def _draw_emotes(layout, props):
         col.separator(factor=0.3)
 
         _op(col, OBJECT_OT_validate_emote.bl_idname, "Validate Emote", "PROGRESS_CHECK", "CHECKMARK")
+        row = col.row(align=True)
+        _op(
+            row, OBJECT_OT_preview_in_builder.bl_idname, "Preview Emote", "EYE_DOTTED", "HIDE_OFF"
+        ).content_type = "EMOTE"
+        row.operator(OBJECT_OT_stop_live_preview.bl_idname, text="", icon="X")
         col.separator(factor=0.3)
 
         settings = col.box()
@@ -633,6 +689,7 @@ class VIEW3D_PT_dcl_help(bpy.types.Panel):
 
 classes = (
     DCLToolsSceneProperties,
+    DCLToolsPreferences,
     MaterialListItem,
     OBJECT_OT_remove_uvs_from_colliders,
     OBJECT_OT_strip_materials_from_colliders,
@@ -659,6 +716,9 @@ classes = (
     OBJECT_OT_enable_backface_culling,
     OBJECT_OT_link_avatar_wearables,
     OBJECT_OT_particles_to_armature_converter,
+    OBJECT_OT_preview_in_builder,
+    OBJECT_OT_reset_previewer_url,
+    OBJECT_OT_stop_live_preview,
     OBJECT_OT_avatar_limitations,
     OBJECT_OT_replace_materials,
     OBJECT_OT_merge_materials,
@@ -693,6 +753,8 @@ def register():
     for cls in classes:
         register_class(cls)
 
+    register_live_preview()
+
     # Register the single PropertyGroup pointer on Scene
     bpy.types.Scene.dcl_tools = bpy.props.PointerProperty(type=DCLToolsSceneProperties)
 
@@ -710,6 +772,9 @@ def register():
 
 
 def unregister():
+    # Tear down the live preview bridge thread before the operator classes disappear.
+    unregister_live_preview()
+
     for cls in reversed(classes):
         unregister_class(cls)
 
