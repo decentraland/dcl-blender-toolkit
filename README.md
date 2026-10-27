@@ -282,8 +282,8 @@ dcl-blender-toolkit/
 │       ├── export_material_atlas.py  # PBR atlas optimizer (1400 lines)
 │       └── ...                   # Additional operators
 ├── assets/                       # Bundled .blend files
-│   ├── AvatarShape_A.blend       # Male avatar base mesh
-│   ├── AvatarShape_B.blend       # Female avatar base mesh
+│   ├── AvatarShape_A.blend       # Female avatar base mesh
+│   ├── AvatarShape_B.blend       # Male avatar base mesh
 │   └── Avatar_File.blend         # Official DCL avatar rig
 ├── scripts/
 │   ├── build.py                  # Build distributable zip
