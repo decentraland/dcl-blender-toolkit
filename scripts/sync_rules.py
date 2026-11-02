@@ -9,7 +9,10 @@ version the copy came from.
 Usage:
     python scripts/sync_rules.py                 # vendor the latest published manifest
     python scripts/sync_rules.py --version 0.6.3 # vendor a specific package version
-    python scripts/sync_rules.py --check         # exit 1 when the vendored copy is behind npm
+    python scripts/sync_rules.py --check         # report whether npm's latest manifest differs from the copy
+
+--check never fails the build: the package is released more often than its numbers change,
+and a newer manifest is information for whoever works on the toolkit next, not a broken build.
 """
 
 import argparse
@@ -105,27 +108,37 @@ def sync(version):
 def check():
     lock = read_lock()
     if lock is None:
-        print("No src/rules/manifest.lock. Run: make sync-rules")
-        return 1
+        print("::warning::No src/rules/manifest.lock. Run: make sync-rules")
+        return 0
     try:
         latest = package_metadata("latest")
-    except (URLError, OSError, ValueError) as error:
-        print(f"WARNING: could not reach npm to compare rules ({error}); skipping the freshness check")
+        published = json.loads(manifest_from_tarball(fetch(latest["tarball"])))
+    except (URLError, OSError, ValueError, RuntimeError) as error:
+        print(f"WARNING: could not fetch the published rules to compare ({error}); skipping")
         return 0
-    if latest["version"] != lock["packageVersion"]:
+    with open(MANIFEST_PATH, encoding="utf-8") as f:
+        vendored = json.load(f)
+    if published == vendored:
         print(
-            f"Rules manifest is behind: vendored {PACKAGE}@{lock['packageVersion']}, "
-            f"npm latest is {latest['version']}. Run: make sync-rules"
+            f"Rules manifest matches {PACKAGE}@{latest['version']} "
+            f"(vendored from {lock['packageVersion']}, rules {lock['rulesVersion']})"
         )
-        return 1
-    print(f"Rules manifest is up to date ({PACKAGE}@{lock['packageVersion']}, rules {lock['rulesVersion']})")
+        return 0
+    changed = sorted(key for key in set(published) | set(vendored) if published.get(key) != vendored.get(key))
+    print(
+        f"::warning::Rules manifest differs from {PACKAGE}@{latest['version']} "
+        f"(rules {published.get('version')}; vendored rules {lock['rulesVersion']} from {lock['packageVersion']}). "
+        f"Changed blocks: {', '.join(changed)}. Run: make sync-rules"
+    )
     return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", default="latest", help="package version to vendor (default: latest)")
-    parser.add_argument("--check", action="store_true", help="only report whether the vendored copy is behind npm")
+    parser.add_argument(
+        "--check", action="store_true", help="report whether npm's latest manifest differs; never fails"
+    )
     args = parser.parse_args()
 
     if args.check:

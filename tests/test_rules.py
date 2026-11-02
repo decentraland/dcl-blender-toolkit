@@ -135,16 +135,27 @@ class TestSyncScript:
         assert lock["sha256"] == hashlib.sha256(written).hexdigest()
         assert json.loads((tmp_path / "manifest.lock").read_text()) == lock
 
-    def test_check_reports_a_stale_copy(self, monkeypatch, capsys):
+    def _published(self, monkeypatch, manifest):
         monkeypatch.setattr(sync_rules, "read_lock", lambda: {"packageVersion": "0.1.0", "rulesVersion": "0.1.0"})
-        monkeypatch.setattr(sync_rules, "package_metadata", lambda version: {"version": "0.2.0"})
-        assert sync_rules.check() == 1
-        assert "make sync-rules" in capsys.readouterr().out
+        monkeypatch.setattr(sync_rules, "package_metadata", lambda version: {"version": "0.2.0", "tarball": "t"})
+        monkeypatch.setattr(sync_rules, "fetch", lambda url: b"")
+        monkeypatch.setattr(sync_rules, "manifest_from_tarball", lambda data: json.dumps(manifest).encode())
 
-    def test_check_passes_on_the_latest(self, monkeypatch):
-        monkeypatch.setattr(sync_rules, "read_lock", lambda: {"packageVersion": "0.2.0", "rulesVersion": "0.5.0"})
-        monkeypatch.setattr(sync_rules, "package_metadata", lambda version: {"version": "0.2.0"})
+    def test_check_warns_when_the_numbers_changed_but_never_fails(self, monkeypatch, capsys):
+        with open(os.path.join(RULES_DIR, "manifest.json"), encoding="utf-8") as f:
+            changed = json.load(f)
+        changed["textures"] = dict(changed["textures"], maxSize=changed["textures"]["maxSize"] + 1)
+        changed["version"] = "9.9.9"
+        self._published(monkeypatch, changed)
         assert sync_rules.check() == 0
+        out = capsys.readouterr().out
+        assert "::warning::" in out and "textures, version" in out and "make sync-rules" in out
+
+    def test_check_is_quiet_when_only_the_package_moved(self, monkeypatch, capsys):
+        with open(os.path.join(RULES_DIR, "manifest.json"), encoding="utf-8") as f:
+            self._published(monkeypatch, json.load(f))
+        assert sync_rules.check() == 0
+        assert "::warning::" not in capsys.readouterr().out
 
     def test_check_tolerates_being_offline(self, monkeypatch, capsys):
         def offline(version):

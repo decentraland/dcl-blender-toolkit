@@ -205,7 +205,7 @@ The wearable and emote limits the toolkit checks (triangles, materials, textures
 
 ```bash
 make sync-rules    # vendor the latest published manifest (updates src/rules/manifest.json and manifest.lock)
-make check-rules   # exit 1 when npm has a newer package than the vendored copy (runs in CI)
+make check-rules   # warn when the published manifest differs from the vendored copy (informational, runs in CI)
 ```
 
 ## Development
