@@ -136,6 +136,8 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
                     "filepath": out_path,
                     "export_format": "GLB",
                     "use_selection": True,
+                    "export_force_sampling": True,
+                    "export_frame_range": True,
                     "export_animations": True,
                     "export_anim_single_armature": False,
                     "export_apply": False,

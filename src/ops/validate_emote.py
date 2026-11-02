@@ -60,11 +60,14 @@ def run_emote_validation(context):
         else:
             result["warnings"].append(message)
 
-    # FPS and timeline constraints.
-    fps = int(context.scene.render.fps)
-    result["metrics"]["fps"] = fps
+    # FPS and timeline constraints. The glTF exporter converts frames with fps * fps_base, so measure the same way.
+    render = context.scene.render
+    fps = render.fps * render.fps_base
+    result["metrics"]["fps"] = round(fps, 3)
     if abs(fps - expected_fps) > fps_tolerance:
-        push(f"Scene framerate is {fps}fps; Decentraland emotes are expected at {expected_fps}fps (±{fps_tolerance}).")
+        push(
+            f"Scene framerate is {fps:g}fps; Decentraland emotes are expected at {expected_fps}fps (±{fps_tolerance})."
+        )
 
     if end_frame <= start_frame:
         push("End frame must be greater than start frame.", is_error=True)
@@ -73,11 +76,11 @@ def run_emote_validation(context):
     length_frames = end_frame - start_frame + 1
     result["metrics"]["frame_length"] = length_frames
     # The rule book measures the last keyframe time; the exporter keeps absolute frame times (no slide to zero).
-    duration_seconds = end_frame / max(fps, 1)
+    duration_seconds = end_frame / max(fps, 1e-6)
     result["metrics"]["duration_s"] = round(duration_seconds, 2)
     if duration_seconds > max_seconds:
         push(
-            f"Last key sits at {duration_seconds:.2f}s (frame {end_frame} at {fps}fps); "
+            f"Last key sits at {duration_seconds:.2f}s (frame {end_frame} at {fps:g}fps); "
             f"max is {max_seconds}s, so the end frame must be {int(max_seconds * fps)} or lower.",
             is_error=True,
         )
@@ -257,7 +260,8 @@ class OBJECT_OT_validate_emote(bpy.types.Operator):
         box = layout.box()
         box.label(text="Metrics", icon="INFO")
         box.label(text=f"FPS: {metrics.get('fps', '-')}")
-        box.label(text=f"Frame Length: {metrics.get('frame_length', '-')} ({metrics.get('duration_s', '-')} s)")
+        box.label(text=f"Frame Length: {metrics.get('frame_length', '-')}")
+        box.label(text=f"Last Key: {metrics.get('duration_s', '-')} s")
         box.label(text=f"Active Action: {metrics.get('active_action', '-')}")
         box.label(text=f"Max Horizontal Offset: {metrics.get('max_horizontal_m', '-')} m")
         box.label(text=f"Max Vertical Offset: {metrics.get('max_vertical_m', '-')} m")

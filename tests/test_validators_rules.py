@@ -11,15 +11,14 @@ validate_emote = load_toolkit_module("ops.validate_emote")
 avatar_limitations = load_toolkit_module("ops.avatar_limitations")
 
 
-def emote_context(fps, start, end, strict=False):
+def emote_context(fps, start, end, strict=False, fps_base=1.0):
     """A scene with no rig: validation stops right after the fps and duration checks."""
     scene = SimpleNamespace(
         dcl_tools=SimpleNamespace(emote_strict_validation=strict, emote_start_frame=start, emote_end_frame=end),
-        render=SimpleNamespace(fps=fps),
+        render=SimpleNamespace(fps=fps, fps_base=fps_base),
         objects=[],
     )
     return SimpleNamespace(scene=scene, active_object=None, selected_objects=[])
-
 
 
 class TestEmoteTiming:
@@ -44,6 +43,13 @@ class TestEmoteTiming:
         assert bool(duration_errors) == expect_duration_error
         assert not [m for m in result["errors"] if "framerate" in m], "fps never blocks"
         assert result["metrics"]["duration_s"] == round(end / fps, 2)
+
+    def test_fps_base_is_part_of_the_frame_rate_like_the_exporter(self):
+        # 30 fps with an NTSC base is 30.03 fps in the exporter's formula, so frame 300 sits just under 10 s.
+        result = validate_emote.run_emote_validation(emote_context(30, 1, 300, fps_base=1.001))
+        assert result["metrics"]["fps"] == 30.03
+        assert result["metrics"]["duration_s"] == round(300 / 30.03, 2)
+        assert not [m for m in result["errors"] if "Last key sits" in m]
 
     def test_limits_come_from_the_manifest(self):
         emote = rules.manifest()["emote"]
