@@ -21,38 +21,36 @@ def emote_context(fps, start, end, strict=False):
     return SimpleNamespace(scene=scene, active_object=None, selected_objects=[])
 
 
-def timing_messages(result):
-    return [m for m in result["errors"] + result["warnings"] if "framerate" in m or "Animation runs" in m]
-
 
 class TestEmoteTiming:
     @pytest.mark.parametrize(
         "fps, start, end, expect_fps_warning, expect_duration_error",
         [
-            (30, 1, 301, False, False),  # exactly 10 s at 30 fps
-            (30, 1, 302, False, True),  # one frame over 10 s
+            (30, 1, 300, False, False),  # last key at exactly 10 s
+            (30, 1, 301, False, True),  # one frame over: the exporter keeps absolute times
+            (30, 61, 360, False, True),  # 300 frames long, but the last key sits at 12 s
             (25, 1, 300, False, True),  # within the fps tolerance, but 12 s long
-            (24, 1, 241, True, False),  # outside the tolerance: advisory only, 10 s is fine
-            (60, 1, 601, True, False),  # far from 30 fps, still 10 s: the Builder accepts it
+            (24, 1, 240, True, False),  # outside the tolerance: advisory only, 10 s is fine
+            (60, 1, 600, True, False),  # far from 30 fps, still 10 s: the Builder accepts it
         ],
     )
-    def test_fps_is_advisory_and_duration_is_measured_in_seconds(
+    def test_fps_is_advisory_and_duration_is_the_last_key_time(
         self, fps, start, end, expect_fps_warning, expect_duration_error
     ):
         result = validate_emote.run_emote_validation(emote_context(fps, start, end))
         fps_warnings = [m for m in result["warnings"] if "framerate" in m]
-        duration_errors = [m for m in result["errors"] if "Animation runs" in m]
+        duration_errors = [m for m in result["errors"] if "Last key sits" in m]
         assert bool(fps_warnings) == expect_fps_warning
         assert bool(duration_errors) == expect_duration_error
         assert not [m for m in result["errors"] if "framerate" in m], "fps never blocks"
-        assert result["metrics"]["duration_s"] == round((end - start) / fps, 2)
+        assert result["metrics"]["duration_s"] == round(end / fps, 2)
 
     def test_limits_come_from_the_manifest(self):
         emote = rules.manifest()["emote"]
         fps = emote["expectedFps"] + emote["fpsTolerance"] + 1
         result = validate_emote.run_emote_validation(emote_context(fps, 1, 2))
         assert any(f"{emote['expectedFps']}fps" in m for m in result["warnings"])
-        over = emote["maxDurationSeconds"] * emote["expectedFps"] + 2
+        over = emote["maxDurationSeconds"] * emote["expectedFps"] + 1
         result = validate_emote.run_emote_validation(emote_context(emote["expectedFps"], 1, over))
         assert any(f"max is {emote['maxDurationSeconds']}s" in m for m in result["errors"])
 
@@ -63,6 +61,10 @@ class TestWearableLimits:
         for identifier, (_label, category, hides) in avatar_limitations.WEARABLE_TYPES.items():
             limits = avatar_limitations.wearable_limits(identifier)
             assert limits["triangles"] == rules.triangle_limit(category, hides)
+
+    def test_helmet_hiding_the_head_shows_the_capped_budget(self):
+        tris = rules.manifest()["triangles"]
+        assert avatar_limitations.wearable_limits("HELMET_HIDE_HEAD")["triangles"] == tris["hiddenHeadLimit"]
 
     def test_hand_accessory_hiding_the_hand_gets_the_hidden_budget(self):
         tris = rules.manifest()["triangles"]

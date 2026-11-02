@@ -51,11 +51,11 @@ class TestProvenance:
         )
         assert {"default", "skin", "maxSize"} <= set(manifest["textures"])
         assert {"default", "skin", "avatarSkinMat"} <= set(manifest["materials"])
-        assert {"expectedFps", "fpsTolerance", "maxFrames", "rootMotion"} <= set(manifest["emote"])
+        assert {"expectedFps", "fpsTolerance", "maxDurationSeconds", "rootMotion"} <= set(manifest["emote"])
         assert {"horizontalErrorMeters", "verticalWarnMeters", "verticalErrorMeters"} <= set(
             manifest["emote"]["rootMotion"]
         )
-        assert "emoteBytes" in manifest["fileSize"]
+        assert {"emoteBytes", "modelHeadroomBytes"} <= set(manifest["fileSize"])
         assert re.fullmatch(r"\d+\.\d+\.\d+", rules.rules_version())
 
 
@@ -180,7 +180,12 @@ class TestSyncScriptHardening:
         data = b"tarball"
         sri = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
         sync_rules.verify_integrity(data, sri)
-        sync_rules.verify_integrity(data, None)
+
+    def test_integrity_fails_closed_when_missing_or_weak(self):
+        with pytest.raises(RuntimeError, match="no dist.integrity"):
+            sync_rules.verify_integrity(b"tarball", None)
+        with pytest.raises(RuntimeError, match="weak"):
+            sync_rules.verify_integrity(b"tarball", "sha1-AAAA")
 
     def test_integrity_rejects_a_tampered_tarball(self):
         with pytest.raises(RuntimeError, match="integrity"):

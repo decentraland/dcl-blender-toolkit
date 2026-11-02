@@ -72,13 +72,13 @@ def run_emote_validation(context):
 
     length_frames = end_frame - start_frame + 1
     result["metrics"]["frame_length"] = length_frames
-    # The rule book measures the last keyframe time in seconds, so the frame budget depends on the fps.
-    duration_seconds = (end_frame - start_frame) / max(fps, 1)
+    # The rule book measures the last keyframe time; the exporter keeps absolute frame times (no slide to zero).
+    duration_seconds = end_frame / max(fps, 1)
     result["metrics"]["duration_s"] = round(duration_seconds, 2)
     if duration_seconds > max_seconds:
         push(
-            f"Animation runs {duration_seconds:.2f}s ({length_frames} frames at {fps}fps); "
-            f"max is {max_seconds}s ({int(max_seconds * fps)} frames).",
+            f"Last key sits at {duration_seconds:.2f}s (frame {end_frame} at {fps}fps); "
+            f"max is {max_seconds}s, so the end frame must be {int(max_seconds * fps)} or lower.",
             is_error=True,
         )
 

@@ -50,13 +50,16 @@ def package_metadata(version):
     return {"version": data["version"], "tarball": dist["tarball"], "integrity": dist.get("integrity")}
 
 
+STRONG_HASHES = ("sha512", "sha384", "sha256")
+
+
 def verify_integrity(tarball_bytes, integrity):
-    """npm's dist.integrity is an SRI string, sha512-<base64>; older entries may lack it."""
+    """npm's dist.integrity is an SRI string, sha512-<base64>. Every current publish has one, so fail closed without it."""
     if not integrity:
-        return
+        raise RuntimeError("npm metadata carries no dist.integrity for the tarball")
     algorithm, _, expected = integrity.partition("-")
-    if algorithm not in hashlib.algorithms_available:
-        raise RuntimeError(f"unsupported integrity algorithm {algorithm}")
+    if algorithm not in STRONG_HASHES:
+        raise RuntimeError(f"weak or unknown integrity algorithm {algorithm}")
     actual = base64.b64encode(hashlib.new(algorithm, tarball_bytes).digest()).decode()
     if actual != expected:
         raise RuntimeError("npm tarball integrity mismatch")

@@ -6,6 +6,7 @@ from ..rules import manifest, rules_version, triangle_limit
 WEARABLE_TYPES = {
     "HAT": ("Hat", "hat", ()),
     "HELMET": ("Helmet", "helmet", ()),
+    "HELMET_HIDE_HEAD": ("Helmet (Hide Head)", "helmet", ("head",)),
     "UPPER_BODY": ("Upper Body", "upper_body", ()),
     "LOWER_BODY": ("Lower Body", "lower_body", ()),
     "FEET": ("Feet", "feet", ()),
