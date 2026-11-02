@@ -1,5 +1,57 @@
 import bpy
 
+from ..rules import manifest, rules_version, triangle_limit
+
+# Toolkit wearable types mapped to the rule book's category and hidden slots.
+WEARABLE_TYPES = {
+    "HAT": ("Hat", "hat", ()),
+    "HELMET": ("Helmet", "helmet", ()),
+    "UPPER_BODY": ("Upper Body", "upper_body", ()),
+    "LOWER_BODY": ("Lower Body", "lower_body", ()),
+    "FEET": ("Feet", "feet", ()),
+    "HAIR": ("Hair", "hair", ()),
+    "MASK": ("Mask", "mask", ()),
+    "EYEWEAR": ("Eyewear", "eyewear", ()),
+    "EARRING": ("Earring", "earring", ()),
+    "TIARA": ("Tiara", "tiara", ()),
+    "TOP_HEAD": ("Top Head", "top_head", ()),
+    "FACIAL_HAIR": ("Facial Hair", "facial_hair", ()),
+    "HAND_ACCESSORY": ("Hand Accessory", "hands_wear", ()),
+    "HAND_ACCESSORY_HIDE": ("Hand Accessory (Hide Hand)", "hands_wear", ("hands",)),
+    "SKIN": ("Skin", "skin", ()),
+}
+
+
+def _format_count(value):
+    return f"{value / 1000:g}K" if value >= 1000 else str(value)
+
+
+def wearable_limits(wearable_type):
+    """Triangle, material and texture limits for a toolkit wearable type, from the vendored rule book."""
+    rules = manifest()
+    _label, category, hides = WEARABLE_TYPES[wearable_type]
+    bucket = "skin" if category == "skin" else "default"
+    max_size = rules["textures"]["maxSize"]
+    return {
+        "triangles": triangle_limit(category, hides),
+        "textures": rules["textures"][bucket],
+        "materials": rules["materials"][bucket],
+        "skin_material": rules["materials"]["avatarSkinMat"],
+        "texture_resolution": f"{max_size}x{max_size}px or lower",
+        "texture_requirements": "Square textures at 72 pixel/inch resolution",
+    }
+
+
+def _enum_items():
+    items = []
+    for identifier, (label, category, _hides) in WEARABLE_TYPES.items():
+        limits = wearable_limits(identifier)
+        extra = f", {limits['textures']} textures max" if category == "skin" else ""
+        items.append(
+            (identifier, label, f"{label} wearable ({_format_count(limits['triangles'])} triangles max{extra})")
+        )
+    return items
+
 
 class OBJECT_OT_avatar_limitations(bpy.types.Operator):
     bl_idname = "object.avatar_limitations"
@@ -10,61 +62,12 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
     wearable_type: bpy.props.EnumProperty(
         name="Wearable Type",
         description="Select the type of wearable to calculate limitations for",
-        items=[
-            ("HAT", "Hat", "Hat wearable (1.5K triangles max)"),
-            ("HELMET", "Helmet", "Helmet wearable (1.5K triangles max)"),
-            ("UPPER_BODY", "Upper Body", "Upper body wearable (1.5K triangles max)"),
-            ("LOWER_BODY", "Lower Body", "Lower body wearable (1.5K triangles max)"),
-            ("FEET", "Feet", "Feet wearable (1.5K triangles max)"),
-            ("HAIR", "Hair", "Hair wearable (1.5K triangles max)"),
-            ("MASK", "Mask", "Mask wearable (500 triangles max)"),
-            ("EYEWEAR", "Eyewear", "Eyewear wearable (500 triangles max)"),
-            ("EARRING", "Earring", "Earring wearable (500 triangles max)"),
-            ("TIARA", "Tiara", "Tiara wearable (500 triangles max)"),
-            ("TOP_HEAD", "Top Head", "Top head wearable (500 triangles max)"),
-            ("FACIAL_HAIR", "Facial Hair", "Facial hair wearable (500 triangles max)"),
-            ("HAND_ACCESSORY", "Hand Accessory", "Hand accessory wearable (1K triangles max)"),
-            (
-                "HAND_ACCESSORY_HIDE",
-                "Hand Accessory (Hide Hand)",
-                "Hand accessory that hides base hand (1.5K triangles max)",
-            ),
-            ("SKIN", "Skin", "Skin wearable (5K triangles max, 5 textures max)"),
-        ],
+        items=_enum_items(),
         default="HAT",
     )
 
     def calculate_limitations(self, wearable_type):
-        """Calculate limitations based on wearable type"""
-
-        # Triangle limits
-        if wearable_type in ["HAT", "HELMET", "UPPER_BODY", "LOWER_BODY", "FEET", "HAIR", "HAND_ACCESSORY_HIDE"]:
-            triangle_limit = 1500
-        elif wearable_type in ["MASK", "EYEWEAR", "EARRING", "TIARA", "TOP_HEAD", "FACIAL_HAIR"]:
-            triangle_limit = 500
-        elif wearable_type == "HAND_ACCESSORY":
-            triangle_limit = 1000
-        elif wearable_type == "SKIN":
-            triangle_limit = 5000
-        else:
-            triangle_limit = 0
-
-        # Texture limits
-        if wearable_type == "SKIN":
-            texture_limit = 5
-        else:
-            texture_limit = 2
-
-        # Material limits (excluding AvatarSkin_MAT)
-        material_limit = 2
-
-        return {
-            "triangles": triangle_limit,
-            "textures": texture_limit,
-            "materials": material_limit,
-            "texture_resolution": "512x512px or lower",
-            "texture_requirements": "Square textures at 72 pixel/inch resolution",
-        }
+        return wearable_limits(wearable_type)
 
     def count_current_usage(self):
         """Count current wearable usage"""
@@ -81,7 +84,7 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
         for obj in bpy.context.selected_objects:
             if obj.type == "MESH" and obj.data:
                 for slot in obj.material_slots:
-                    if slot.material and slot.material.name != "AvatarSkin_MAT":
+                    if slot.material and slot.material.name != manifest()["materials"]["avatarSkinMat"]:
                         materials_used.add(slot.material.name)
 
         material_count = len(materials_used)
@@ -124,10 +127,9 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
             "",
             "IMPORTANT NOTES:",
             "• Only selected objects are counted",
-            "• AvatarSkin_MAT material is not counted toward material limit",
+            f"• {limitations['skin_material']} material is not counted toward material limit",
             "• All textures must be square and 72 pixel/inch resolution",
-            "• Hand accessories that hide base hand get 1.5K triangle budget",
-            "• Skin wearables get 5K triangle and 5 texture budget",
+            f"• Limits follow the Decentraland rule book v{rules_version()}",
         ]
 
         # Check for warnings

@@ -1,4 +1,4 @@
-.PHONY: setup lint format check test build clean
+.PHONY: setup lint format check test build clean sync-rules check-rules
 
 setup:
 	pip install ruff pytest
@@ -15,6 +15,12 @@ check: lint
 
 test:
 	pytest tests/ -v
+
+sync-rules:
+	python scripts/sync_rules.py
+
+check-rules:
+	python scripts/sync_rules.py --check
 
 build:
 ifdef VERSION

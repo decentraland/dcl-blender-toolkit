@@ -1,5 +1,7 @@
 import bpy
 
+from ..rules import manifest
+
 
 class OBJECT_OT_validate_textures(bpy.types.Operator):
     bl_idname = "object.validate_textures"
@@ -9,8 +11,8 @@ class OBJECT_OT_validate_textures(bpy.types.Operator):
 
     max_size: bpy.props.IntProperty(
         name="Max Size (px)",
-        description="Maximum recommended texture dimension in pixels",
-        default=1024,
+        description="Maximum texture dimension in pixels (Decentraland's wearable limit by default)",
+        default=manifest()["textures"]["maxSize"],
         min=64,
         max=4096,
     )
@@ -41,7 +43,7 @@ class OBJECT_OT_validate_textures(bpy.types.Operator):
 
         # Oversized check
         if w > self.max_size or h > self.max_size:
-            issues.append(("WARNING", f"Oversized ({w}x{h} > {self.max_size})"))
+            issues.append(("ERROR", f"Oversized ({w}x{h} > {self.max_size})"))
 
         # Non-square check
         if w != h:

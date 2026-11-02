@@ -23,6 +23,19 @@ jobs:
       - name: Check
         run: make check
 
+  rules:
+    name: Rules manifest up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compare src/rules with the published wearable-validator
+        run: make check-rules
+
   test:
     name: Test
     runs-on: ubuntu-latest

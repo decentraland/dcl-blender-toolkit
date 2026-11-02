@@ -199,6 +199,15 @@ emote), the active or selected rig gets the new `_Prop` action, otherwise the fi
 | **Export Instances** | Export collection instances as JSON with position, rotation, and scale for the Decentraland SDK |
 | **Particle to Armature** | Convert particle systems into armature-driven animations |
 
+## Validation Rules
+
+The wearable and emote limits the toolkit checks (triangles, materials, textures, fps, frame count, file sizes, root motion) are not written into the code. They are read from `src/rules/manifest.json`, a vendored copy of the rule book published as [`@dcl-regenesislabs/wearable-validator`](https://www.npmjs.com/package/@dcl-regenesislabs/wearable-validator), which is what the Builder and the curation job run. The panel shows the rules version in use.
+
+```bash
+make sync-rules    # vendor the latest published manifest (updates src/rules/manifest.json and manifest.lock)
+make check-rules   # exit 1 when npm has a newer package than the vendored copy (runs in CI)
+```
+
 ## Development
 
 ### Prerequisites
