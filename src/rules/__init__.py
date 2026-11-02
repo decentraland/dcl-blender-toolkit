@@ -5,7 +5,6 @@ import os
 
 RULES_DIR = os.path.dirname(os.path.abspath(__file__))
 MANIFEST_PATH = os.path.join(RULES_DIR, "manifest.json")
-LOCK_PATH = os.path.join(RULES_DIR, "manifest.lock")
 
 _manifest = None
 

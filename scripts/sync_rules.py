@@ -16,6 +16,7 @@ and a newer manifest is information for whoever works on the toolkit next, not a
 """
 
 import argparse
+import base64
 import hashlib
 import io
 import json
@@ -23,7 +24,7 @@ import os
 import sys
 import tarfile
 from datetime import datetime, timezone
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 PACKAGE = "@dcl-regenesislabs/wearable-validator"
@@ -43,7 +44,25 @@ def fetch(url):
 
 def package_metadata(version):
     data = json.loads(fetch(f"{REGISTRY}/{PACKAGE}/{version}"))
-    return {"version": data["version"], "tarball": data["dist"]["tarball"], "shasum": data["dist"]["shasum"]}
+    dist = data["dist"]
+    if not dist["tarball"].startswith(f"{REGISTRY}/"):
+        raise RuntimeError(f"tarball is not hosted on {REGISTRY}: {dist['tarball']}")
+    return {"version": data["version"], "tarball": dist["tarball"], "integrity": dist.get("integrity")}
+
+
+def verify_integrity(tarball_bytes, integrity):
+    """npm's dist.integrity is an SRI string, sha512-<base64>; older entries may lack it."""
+    if not integrity:
+        return
+    algorithm, _, expected = integrity.partition("-")
+    if algorithm not in hashlib.algorithms_available:
+        raise RuntimeError(f"unsupported integrity algorithm {algorithm}")
+    actual = base64.b64encode(hashlib.new(algorithm, tarball_bytes).digest()).decode()
+    if actual != expected:
+        raise RuntimeError("npm tarball integrity mismatch")
+
+
+FETCH_ERRORS = (URLError, OSError, ValueError, KeyError, RuntimeError, tarfile.ReadError)
 
 
 def manifest_from_tarball(tarball_bytes):
@@ -75,7 +94,7 @@ def write_vendored(manifest_bytes, package_version, rules_dir=RULES_DIR):
     manifest_path = os.path.join(rules_dir, "manifest.json")
     lock_path = os.path.join(rules_dir, "manifest.lock")
 
-    with open(manifest_path, "w", encoding="utf-8") as f:
+    with open(manifest_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(manifest, f, indent=2)
         f.write("\n")
     with open(manifest_path, "rb") as f:
@@ -89,7 +108,7 @@ def write_vendored(manifest_bytes, package_version, rules_dir=RULES_DIR):
         "syncedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "source": f"{REGISTRY}/{PACKAGE}/{package_version}",
     }
-    with open(lock_path, "w", encoding="utf-8") as f:
+    with open(lock_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(lock, f, indent=2)
         f.write("\n")
     return lock
@@ -98,8 +117,7 @@ def write_vendored(manifest_bytes, package_version, rules_dir=RULES_DIR):
 def sync(version):
     meta = package_metadata(version)
     tarball = fetch(meta["tarball"])
-    if hashlib.sha1(tarball).hexdigest() != meta["shasum"]:
-        raise RuntimeError("npm tarball checksum mismatch")
+    verify_integrity(tarball, meta["integrity"])
     lock = write_vendored(manifest_from_tarball(tarball), meta["version"])
     print(f"Vendored {PACKAGE}@{lock['packageVersion']} (rules {lock['rulesVersion']}) into src/rules/")
     return lock
@@ -113,8 +131,12 @@ def check():
     try:
         latest = package_metadata("latest")
         published = json.loads(manifest_from_tarball(fetch(latest["tarball"])))
-    except (URLError, OSError, ValueError, RuntimeError) as error:
-        print(f"WARNING: could not fetch the published rules to compare ({error}); skipping")
+    except HTTPError as error:
+        # A 404 or 5xx is not "offline": the package may have moved, so make it visible on the PR.
+        print(f"::warning::Could not fetch {PACKAGE} from npm (HTTP {error.code}); the rules comparison did not run")
+        return 0
+    except FETCH_ERRORS as error:
+        print(f"WARNING: could not reach npm to compare the rules ({error}); skipping")
         return 0
     with open(MANIFEST_PATH, encoding="utf-8") as f:
         vendored = json.load(f)
@@ -145,7 +167,10 @@ def main():
         sys.exit(check())
     try:
         sync(args.version)
-    except (URLError, OSError, RuntimeError, ValueError) as error:
+    except HTTPError as error:
+        print(f"ERROR: npm answered HTTP {error.code} for {PACKAGE}@{args.version}")
+        sys.exit(1)
+    except FETCH_ERRORS as error:
         print(f"ERROR: {error}")
         sys.exit(1)
 

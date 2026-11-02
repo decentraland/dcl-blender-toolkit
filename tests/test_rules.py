@@ -99,12 +99,18 @@ class TestValidatorsReadTheManifest:
 
     def test_export_size_limit_comes_from_the_manifest(self):
         source = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
-        assert 'manifest()["fileSize"]["emoteBytes"]' in source
+        assert 'manifest()["fileSize"]' in source and 'sizes["emoteBytes"] - sizes["modelHeadroomBytes"]' in source
         assert "file_size > 1024 * 1024" not in source
 
     def test_fps_is_compared_with_the_tolerance(self):
         source = read_source(os.path.join(SRC_DIR, "ops", "validate_emote.py"))
         assert "fps_tolerance" in source and "fps != 30" not in source
+
+    def test_frame_range_properties_are_not_clamped_to_a_limit(self):
+        source = read_source(os.path.join(SRC_DIR, "__init__.py"))
+        for prop in ("emote_start_frame", "emote_end_frame"):
+            block = source[source.index(prop) : source.index(")", source.index(prop))]
+            assert "max=" not in block, f"{prop} is clamped; the duration check decides the frame budget"
 
 
 class TestSyncScript:
@@ -165,3 +171,34 @@ class TestSyncScript:
         monkeypatch.setattr(sync_rules, "package_metadata", offline)
         assert sync_rules.check() == 0
         assert "WARNING" in capsys.readouterr().out
+
+
+class TestSyncScriptHardening:
+    def test_integrity_accepts_matching_sha512(self):
+        import base64
+
+        data = b"tarball"
+        sri = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
+        sync_rules.verify_integrity(data, sri)
+        sync_rules.verify_integrity(data, None)
+
+    def test_integrity_rejects_a_tampered_tarball(self):
+        with pytest.raises(RuntimeError, match="integrity"):
+            sync_rules.verify_integrity(b"tarball", "sha512-AAAA")
+
+    def test_metadata_rejects_a_tarball_off_the_registry(self, monkeypatch):
+        body = json.dumps({"version": "1.0.0", "dist": {"tarball": "https://evil.example/x.tgz"}}).encode()
+        monkeypatch.setattr(sync_rules, "fetch", lambda url: body)
+        with pytest.raises(RuntimeError, match="not hosted"):
+            sync_rules.package_metadata("latest")
+
+    def test_check_surfaces_http_errors_as_warnings(self, monkeypatch, capsys):
+        from urllib.error import HTTPError
+
+        def missing(version):
+            raise HTTPError("https://registry.npmjs.org/x", 404, "Not Found", {}, None)
+
+        monkeypatch.setattr(sync_rules, "read_lock", lambda: {"packageVersion": "0.2.0", "rulesVersion": "0.5.0"})
+        monkeypatch.setattr(sync_rules, "package_metadata", missing)
+        assert sync_rules.check() == 0
+        assert "::warning::" in capsys.readouterr().out

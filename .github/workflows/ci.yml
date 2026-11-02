@@ -26,6 +26,8 @@ jobs:
   rules:
     name: Rules manifest freshness (informational)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 

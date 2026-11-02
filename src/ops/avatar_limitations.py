@@ -81,10 +81,11 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
 
         # Count materials used by selected objects
         materials_used = set()
+        skin_material = manifest()["materials"]["avatarSkinMat"]
         for obj in bpy.context.selected_objects:
             if obj.type == "MESH" and obj.data:
                 for slot in obj.material_slots:
-                    if slot.material and slot.material.name != manifest()["materials"]["avatarSkinMat"]:
+                    if slot.material and slot.material.name != skin_material:
                         materials_used.add(slot.material.name)
 
         material_count = len(materials_used)

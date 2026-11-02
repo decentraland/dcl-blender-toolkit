@@ -120,14 +120,12 @@ class DCLToolsSceneProperties(bpy.types.PropertyGroup):
         description="First frame of the emote clip",
         default=1,
         min=1,
-        max=300,
     )
     emote_end_frame: bpy.props.IntProperty(
         name="End Frame",
-        description="Last frame of the emote clip (max 300)",
+        description="Last frame of the emote clip (emotes run at most 10 s at the scene fps)",
         default=300,
         min=1,
-        max=300,
     )
     emote_sampling_rate: bpy.props.IntProperty(
         name="Sampling Rate",

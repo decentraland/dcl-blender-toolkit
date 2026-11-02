@@ -194,11 +194,13 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
         skipped = len(all_prop_armatures) - len(prop_armatures)
         if skipped:
             prop_note += f" Skipped {skipped} prop rig(s) not paired with this emote."
-        max_bytes = manifest()["fileSize"]["emoteBytes"]
+        sizes = manifest()["fileSize"]
+        # The item limit covers model, thumbnail and rarity image; the model alone gets the limit minus the headroom.
+        max_bytes = sizes["emoteBytes"] - sizes["modelHeadroomBytes"]
         if file_size > max_bytes:
             self.report(
                 {"WARNING"},
-                f"Exported {out_path} ({size_mb:.2f} MB). Decentraland's emote limit is "
+                f"Exported {out_path} ({size_mb:.2f} MB). Decentraland rejects emote models above "
                 f"{max_bytes / (1024 * 1024):g} MB.{prop_note}",
             )
         else:

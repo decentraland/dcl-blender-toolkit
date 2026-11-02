@@ -43,7 +43,7 @@ class OBJECT_OT_validate_textures(bpy.types.Operator):
 
         # Oversized check
         if w > self.max_size or h > self.max_size:
-            issues.append(("ERROR", f"Oversized ({w}x{h} > {self.max_size})"))
+            issues.append(("WARNING", f"Oversized ({w}x{h} > {self.max_size}; wearables are rejected above the limit)"))
 
         # Non-square check
         if w != h:
