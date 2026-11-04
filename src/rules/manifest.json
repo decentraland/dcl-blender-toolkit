@@ -1,0 +1,377 @@
+{
+  "version": "0.7.1",
+  "triangles": {
+    "default": 1500,
+    "perCategory": {
+      "mask": 500,
+      "eyewear": 500,
+      "earring": 500,
+      "tiara": 500,
+      "top_head": 500,
+      "facial_hair": 500,
+      "hands_wear": 1000,
+      "hat": 1500,
+      "helmet": 1500,
+      "hair": 1500,
+      "upper_body": 1500,
+      "lower_body": 1500,
+      "feet": 1500,
+      "skin": 5000
+    },
+    "hiddenHandsBudget": 500,
+    "headSlots": [
+      "mask",
+      "eyewear",
+      "earring",
+      "tiara",
+      "top_head",
+      "facial_hair",
+      "hat",
+      "helmet",
+      "hair"
+    ],
+    "hiddenHeadLimit": 4000
+  },
+  "textures": {
+    "default": 2,
+    "skin": 5,
+    "maxSize": 1024,
+    "facialMaxSize": 256
+  },
+  "materials": {
+    "default": 2,
+    "skin": 5,
+    "avatarSkinMat": "AvatarSkin_MAT",
+    "forbiddenMeshNamePatterns": [
+      "_mouth",
+      "_eyebrows",
+      "_eyes"
+    ]
+  },
+  "facialCategories": [
+    "eyebrows",
+    "eyes",
+    "mouth"
+  ],
+  "fileSize": {
+    "wearableBytes": 3145728,
+    "skinBytes": 9437184,
+    "emoteBytes": 3145728,
+    "modelHeadroomBytes": 1048576,
+    "thumbnailBytes": 1048576,
+    "thumbnailMaxSize": 1024,
+    "smartWearableVideoBytes": 262144000,
+    "audioBytes": 3145728,
+    "maxInputBytes": 272629760,
+    "maxEntries": 256,
+    "maxUncompressedBytes": 268435456,
+    "maxEntryUncompressedBytes": 268435456
+  },
+  "images": {
+    "maxDecodePixels": 16777216,
+    "inflateChunkBytes": 16384,
+    "maxScanPixels": 67108864,
+    "qrMaxSideRatio": 2,
+    "qrEdgeMarginRatio": 0.05
+  },
+  "boundingBox": {
+    "width": 2.42,
+    "height": 2.42,
+    "depth": 1.4
+  },
+  "text": {
+    "nameMax": 32,
+    "descriptionMax": 64,
+    "forbiddenChars": [
+      ":"
+    ],
+    "tagsMax": 20
+  },
+  "skeleton": {
+    "armatureName": "Armature",
+    "propArmatureName": "Armature_Prop",
+    "maxInfluences": 4,
+    "weightSumEpsilon": 0.02,
+    "springBoneToken": "springbone",
+    "maxSpringBones": 12,
+    "springBone": {
+      "stiffness": [
+        0,
+        4
+      ],
+      "gravityPower": [
+        0,
+        2
+      ],
+      "drag": [
+        0,
+        1
+      ],
+      "gravityDir": [
+        -10,
+        10
+      ]
+    }
+  },
+  "emote": {
+    "maxDurationSeconds": 10,
+    "expectedFps": 30,
+    "fpsTolerance": 5,
+    "maxFrames": 300,
+    "maxClipsBasic": 1,
+    "maxClipsWithProps": 2,
+    "propMaxTriangles": 3000,
+    "propMaxMaterials": 2,
+    "propMaxTextures": 2,
+    "propMaxBones": 62,
+    "propClipLengthToleranceSeconds": 0.0333333,
+    "audioDurationToleranceSeconds": 0.5,
+    "rootMotion": {
+      "horizontalErrorMeters": 1,
+      "verticalWarnMeters": 1,
+      "verticalErrorMeters": 4,
+      "hipsPattern": "hips"
+    },
+    "maxSocialOutcomes": 3
+  },
+  "epsilons": {
+    "loopSeamTranslation": 0.001,
+    "loopSeamQuaternionDot": 0.9999,
+    "loopSeamScale": 0.001,
+    "zUpRotationToleranceDegrees": 1
+  },
+  "gltf": {
+    "extensionAllowlist": [
+      "KHR_materials_unlit",
+      "KHR_texture_transform",
+      "KHR_materials_emissive_strength",
+      "KHR_materials_specular",
+      "KHR_materials_ior",
+      "KHR_materials_clearcoat",
+      "KHR_materials_sheen",
+      "KHR_mesh_quantization"
+    ],
+    "unknownCodeSeverity": "warning",
+    "severityOverrides": {},
+    "zUpHeuristic": false,
+    "maxUnpackedBytes": 268435456
+  },
+  "hands": {
+    "minHandWeightRatio": 0.5
+  },
+  "thumbnail": {
+    "minTransparentBorderRatio": 0.9,
+    "alphaThreshold": 8
+  },
+  "rendering": {
+    "imageSizePx": 512,
+    "recipeVersion": 5,
+    "bodyShapes": [
+      "urn:decentraland:off-chain:base-avatars:BaseMale",
+      "urn:decentraland:off-chain:base-avatars:BaseFemale"
+    ],
+    "views": {
+      "wearable": [
+        "avatar",
+        "wearable"
+      ],
+      "emote": [
+        "avatar"
+      ]
+    },
+    "azimuthDegrees": {
+      "wearable": [
+        0,
+        90,
+        180
+      ],
+      "emote": [
+        0,
+        90
+      ]
+    },
+    "emoteFractions": [
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1
+    ],
+    "maxCaptures": 28,
+    "stress": {
+      "skin": "00ff00",
+      "azimuthDegrees": [
+        0,
+        90
+      ],
+      "poses": {
+        "arms": [
+          {
+            "clip": "dab",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.25
+          },
+          {
+            "clip": "run",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.75
+          }
+        ],
+        "legs": [
+          {
+            "clip": "jump",
+            "fraction": 0.75
+          },
+          {
+            "clip": "run",
+            "fraction": 0.25
+          },
+          {
+            "clip": "run",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.75
+          }
+        ],
+        "head": [
+          {
+            "clip": "head-explode",
+            "fraction": 0.25
+          },
+          {
+            "clip": "dab",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.25
+          },
+          {
+            "clip": "run",
+            "fraction": 0.75
+          }
+        ],
+        "hands": [
+          {
+            "clip": "clap",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.25
+          },
+          {
+            "clip": "run",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.75
+          }
+        ],
+        "body": [
+          {
+            "clip": "dab",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.25
+          },
+          {
+            "clip": "run",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.75
+          }
+        ]
+      },
+      "categoryPoses": {
+        "upper_body": "arms",
+        "hands_wear": "hands",
+        "lower_body": "legs",
+        "feet": "legs",
+        "skin": "body",
+        "hat": "head",
+        "helmet": "head",
+        "hair": "head",
+        "eyewear": "head",
+        "earring": "head",
+        "tiara": "head",
+        "mask": "head",
+        "top_head": "head",
+        "facial_hair": "head"
+      }
+    },
+    "background": "444444",
+    "skin": "e8b89a",
+    "wearablePose": "fist-pump",
+    "wearablePoseFraction": 0,
+    "loadTimeoutMs": 180000,
+    "maxCaptureBytes": 8388608
+  },
+  "ai": {
+    "model": "claude-sonnet-5",
+    "maxInputTokens": 40000,
+    "maxImages": 29,
+    "timeoutMs": 300000,
+    "maxRetries": 0,
+    "thinkingBudgetTokens": 1024,
+    "imagePixelsPerToken": 750,
+    "textCharactersPerToken": 3,
+    "maxTextLength": 1200
+  },
+  "renderValid": {
+    "minSubjectRatio": 0.0005,
+    "warnSubjectRatio": 0.02,
+    "backgroundTolerance": 24
+  },
+  "thumbnailHonesty": {
+    "promptVersion": 4,
+    "maxFindings": 8
+  },
+  "visualQuality": {
+    "promptVersion": 2,
+    "maxFindings": 12
+  },
+  "emoteQuality": {
+    "promptVersion": 2,
+    "maxFindings": 8
+  },
+  "smartWearableCode": {
+    "promptVersion": 1,
+    "maxFindings": 8,
+    "maxCodeBytes": 1572864,
+    "maxInputTokens": 950000
+  },
+  "receipts": {
+    "trianglesAndBones": "builder src/lib/glbValidation/constants.ts",
+    "fileSizes": "ADR-246 via core-libs content-validator ADR51.ts constants",
+    "textRules": "builder-server Item.schema.ts / Item.model.ts",
+    "springBones": "ADR-316; builder constants MAX_SPRING_BONES"
+  },
+  "discrepancies": [
+    {
+      "topic": "z-up heuristic",
+      "note": "Disabled 2026-09-02: fired on ~all committee-approved catalyst items (rotated Armature roots are normal in accepted exports)."
+    },
+    {
+      "topic": "self hide/replace (M-12)",
+      "note": "Downgraded to warning 2026-09-09: committee-approved items (e.g. 0xae473ded\u2026:0) carry self-referencing hides/replaces and work in-world \u2014 the engine ignores them (replaces deprecated by ADR-239)."
+    },
+    {
+      "topic": "animations/shape keys in wearable GLBs (M-13)",
+      "note": "Downgraded to warning 2026-09-09: approved items ship leftover clips (Mixamo 'Take 001') and work in-world \u2014 the engine ignores non-emote animations; docs phrase this as export hygiene."
+    }
+  ]
+}

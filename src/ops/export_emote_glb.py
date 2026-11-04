@@ -2,6 +2,7 @@ import os
 
 import bpy
 
+from ..rules import manifest
 from .emote_utils import (
     apply_action_assignments,
     claim_export_names,
@@ -135,6 +136,8 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
                     "filepath": out_path,
                     "export_format": "GLB",
                     "use_selection": True,
+                    "export_force_sampling": True,
+                    "export_frame_range": True,
                     "export_animations": True,
                     "export_anim_single_armature": False,
                     "export_apply": False,
@@ -193,10 +196,14 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
         skipped = len(all_prop_armatures) - len(prop_armatures)
         if skipped:
             prop_note += f" Skipped {skipped} prop rig(s) not paired with this emote."
-        if file_size > 1024 * 1024:
+        sizes = manifest()["fileSize"]
+        # The item limit covers model, thumbnail and rarity image; the model alone gets the limit minus the headroom.
+        max_bytes = sizes["emoteBytes"] - sizes["modelHeadroomBytes"]
+        if file_size > max_bytes:
             self.report(
                 {"WARNING"},
-                f"Exported {out_path} ({size_mb:.2f} MB). DCL recommends <= 1 MB.{prop_note}",
+                f"Exported {out_path} ({size_mb:.2f} MB). Decentraland rejects emote models above "
+                f"{max_bytes / (1024 * 1024):g} MB.{prop_note}",
             )
         else:
             self.report({"INFO"}, f"Exported {out_path} ({size_mb:.2f} MB).{prop_note}")

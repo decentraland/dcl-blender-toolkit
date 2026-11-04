@@ -1,0 +1,8 @@
+{
+  "package": "@dcl-regenesislabs/wearable-validator",
+  "packageVersion": "0.6.4",
+  "rulesVersion": "0.7.1",
+  "sha256": "e00d24d06ce0e7a385463539437e163f75304be17e8e31d739eaf672538c0f6d",
+  "syncedAt": "2026-11-04T11:41:27Z",
+  "source": "https://registry.npmjs.org/@dcl-regenesislabs/wearable-validator/0.6.4"
+}

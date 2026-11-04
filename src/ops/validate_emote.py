@@ -2,6 +2,7 @@ import math
 
 import bpy
 
+from ..rules import manifest
 from .emote_utils import (
     action_matches_armature,
     collect_armature_geometry,
@@ -38,6 +39,11 @@ def run_emote_validation(context):
     strict_mode = bool(props.emote_strict_validation)
     start_frame = int(props.emote_start_frame)
     end_frame = int(props.emote_end_frame)
+    limits = manifest()["emote"]
+    expected_fps = limits["expectedFps"]
+    fps_tolerance = limits["fpsTolerance"]
+    max_seconds = limits["maxDurationSeconds"]
+    root_motion = limits["rootMotion"]
 
     result = {
         "errors": [],
@@ -54,11 +60,20 @@ def run_emote_validation(context):
         else:
             result["warnings"].append(message)
 
-    # FPS and timeline constraints.
-    fps = int(context.scene.render.fps)
-    result["metrics"]["fps"] = fps
-    if fps != 30:
-        push(f"Scene framerate is {fps}fps; Decentraland emotes must be 30fps.", is_error=True)
+    # FPS and timeline constraints. The glTF exporter converts frames with fps * fps_base, so measure the same way.
+    render = context.scene.render
+    fps = render.fps * render.fps_base
+    result["metrics"]["fps"] = round(fps, 3)
+    # The rule book infers fps from the spacing of the exported keys, and the export samples every N frames.
+    sampling_rate = max(int(props.emote_sampling_rate), 1)
+    exported_fps = fps / sampling_rate
+    result["metrics"]["exported_fps"] = round(exported_fps, 3)
+    if abs(exported_fps - expected_fps) > fps_tolerance:
+        sampled = f" ({fps:g}fps scene sampled every {sampling_rate} frames)" if sampling_rate > 1 else ""
+        push(
+            f"Exported framerate reads as {exported_fps:g}fps{sampled}; "
+            f"Decentraland emotes are expected at {expected_fps}fps (±{fps_tolerance})."
+        )
 
     if end_frame <= start_frame:
         push("End frame must be greater than start frame.", is_error=True)
@@ -66,8 +81,15 @@ def run_emote_validation(context):
 
     length_frames = end_frame - start_frame + 1
     result["metrics"]["frame_length"] = length_frames
-    if length_frames > 300:
-        push(f"Animation length is {length_frames} frames; max is 300 frames.", is_error=True)
+    # The rule book measures the last keyframe time; the exporter keeps absolute frame times (no slide to zero).
+    duration_seconds = end_frame / max(fps, 1e-6)
+    result["metrics"]["duration_s"] = round(duration_seconds, 2)
+    if duration_seconds > max_seconds:
+        push(
+            f"Last key sits at {duration_seconds:.2f}s (frame {end_frame} at {fps:g}fps); "
+            f"max is {max_seconds}s, so the end frame must be {int(max_seconds * fps)} or lower.",
+            is_error=True,
+        )
 
     # Armature/action constraints.
     armature = find_avatar_armature(context)
@@ -159,7 +181,7 @@ def run_emote_validation(context):
             f"Avatar action '{action.name}' should end in '_Avatar' when the emote carries a prop.",
         )
 
-    # Approximate displacement/height guidance (<= 1m).
+    # Approximate root motion, measured on a hips-like bone rather than the exported hips track.
     marker = None
     for marker_name in ("CTRL_Avatar_UpperBody", "Avatar_Hips", "Hips"):
         marker = armature.pose.bones.get(marker_name)
@@ -190,15 +212,23 @@ def run_emote_validation(context):
 
     result["metrics"]["max_horizontal_m"] = round(max_horizontal, 4)
     result["metrics"]["max_vertical_m"] = round(max_vertical, 4)
-    if max_horizontal > 1.0:
+    horizontal_limit = root_motion["horizontalErrorMeters"]
+    vertical_warn = root_motion["verticalWarnMeters"]
+    vertical_limit = root_motion["verticalErrorMeters"]
+    approx = "(approximate: measured on the rig's hips bone, the Builder measures the exported hips track)"
+    if max_horizontal > horizontal_limit:
         push(
-            f"Horizontal displacement reaches {max_horizontal:.2f}m (recommended <= 1.0m).",
-            is_error=False,
+            f"Horizontal displacement reaches ~{max_horizontal:.2f}m; emotes must stay within {horizontal_limit:g}m {approx}.",
+            is_error=strict_mode,
         )
-    if max_vertical > 1.0:
+    if max_vertical > vertical_limit:
         push(
-            f"Vertical displacement reaches {max_vertical:.2f}m (recommended <= 1.0m).",
-            is_error=False,
+            f"Vertical displacement reaches ~{max_vertical:.2f}m; the limit is {vertical_limit:g}m {approx}.",
+            is_error=strict_mode,
+        )
+    elif max_vertical > vertical_warn:
+        push(
+            f"Vertical displacement reaches ~{max_vertical:.2f}m; more than {vertical_warn:g}m reads as leaving the ground {approx}."
         )
 
     if not result["errors"] and not result["warnings"]:
@@ -237,6 +267,7 @@ class OBJECT_OT_validate_emote(bpy.types.Operator):
         box.label(text="Metrics", icon="INFO")
         box.label(text=f"FPS: {metrics.get('fps', '-')}")
         box.label(text=f"Frame Length: {metrics.get('frame_length', '-')}")
+        box.label(text=f"Last Key: {metrics.get('duration_s', '-')} s")
         box.label(text=f"Active Action: {metrics.get('active_action', '-')}")
         box.label(text=f"Max Horizontal Offset: {metrics.get('max_horizontal_m', '-')} m")
         box.label(text=f"Max Vertical Offset: {metrics.get('max_vertical_m', '-')} m")

@@ -70,6 +70,7 @@ from .ops.strip_materials import OBJECT_OT_strip_materials_from_colliders
 from .ops.validate_emote import OBJECT_OT_validate_emote
 from .ops.validate_scene import OBJECT_OT_validate_scene
 from .ops.validate_textures import OBJECT_OT_validate_textures
+from .rules import rules_version
 
 # Tab constants
 TAB_ALL = "ALL"
@@ -119,14 +120,12 @@ class DCLToolsSceneProperties(bpy.types.PropertyGroup):
         description="First frame of the emote clip",
         default=1,
         min=1,
-        max=300,
     )
     emote_end_frame: bpy.props.IntProperty(
         name="End Frame",
-        description="Last frame of the emote clip (max 300)",
+        description="Last frame of the emote clip (emotes run at most 10 s at the scene fps)",
         default=300,
         min=1,
-        max=300,
     )
     emote_sampling_rate: bpy.props.IntProperty(
         name="Sampling Rate",
@@ -638,6 +637,12 @@ class VIEW3D_PT_dcl_tools(bpy.types.Panel):
             _draw_generate_thumbnail(layout, props)
             if props.show_experimental:
                 _draw_other(layout, props)
+
+        if tab in (TAB_ALL, TAB_WEARABLES):
+            footer = layout.row()
+            footer.alignment = "RIGHT"
+            footer.enabled = False
+            footer.label(text=f"Wearable & emote rules v{rules_version()}")
 
 
 class VIEW3D_PT_dcl_export(bpy.types.Panel):
