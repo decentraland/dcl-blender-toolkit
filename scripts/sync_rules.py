@@ -18,6 +18,7 @@ and a newer manifest is information for whoever works on the toolkit next, not a
 import argparse
 import base64
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -65,7 +66,16 @@ def verify_integrity(tarball_bytes, integrity):
         raise RuntimeError("npm tarball integrity mismatch")
 
 
-FETCH_ERRORS = (URLError, OSError, ValueError, KeyError, RuntimeError, tarfile.ReadError)
+FETCH_ERRORS = (
+    URLError,
+    OSError,
+    EOFError,
+    http.client.HTTPException,
+    ValueError,
+    KeyError,
+    RuntimeError,
+    tarfile.ReadError,
+)
 
 
 def manifest_from_tarball(tarball_bytes):
@@ -91,8 +101,15 @@ def read_lock(path=LOCK_PATH):
         return json.load(f)
 
 
-def write_vendored(manifest_bytes, package_version, rules_dir=RULES_DIR):
+def parse_manifest(manifest_bytes):
     manifest = json.loads(manifest_bytes)
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("version"), str):
+        raise RuntimeError("the published manifest is not an object with a string version")
+    return manifest
+
+
+def write_vendored(manifest_bytes, package_version, rules_dir=RULES_DIR):
+    manifest = parse_manifest(manifest_bytes)
     os.makedirs(rules_dir, exist_ok=True)
     manifest_path = os.path.join(rules_dir, "manifest.json")
     lock_path = os.path.join(rules_dir, "manifest.lock")
@@ -127,22 +144,25 @@ def sync(version):
 
 
 def check():
-    lock = read_lock()
-    if lock is None:
-        print("::warning::No src/rules/manifest.lock. Run: make sync-rules")
-        return 0
+    """Informational: compare the vendored manifest with npm's latest. Nothing here may fail the build."""
     try:
+        lock = read_lock()
+        if lock is None:
+            print("::warning::No src/rules/manifest.lock. Run: make sync-rules")
+            return 0
+        with open(MANIFEST_PATH, encoding="utf-8") as f:
+            vendored = json.load(f)
         latest = package_metadata("latest")
-        published = json.loads(manifest_from_tarball(fetch(latest["tarball"])))
+        tarball = fetch(latest["tarball"])
+        verify_integrity(tarball, latest.get("integrity"))
+        published = parse_manifest(manifest_from_tarball(tarball))
     except HTTPError as error:
         # A 404 or 5xx is not "offline": the package may have moved, so make it visible on the PR.
         print(f"::warning::Could not fetch {PACKAGE} from npm (HTTP {error.code}); the rules comparison did not run")
         return 0
     except FETCH_ERRORS as error:
-        print(f"WARNING: could not reach npm to compare the rules ({error}); skipping")
+        print(f"WARNING: could not compare the rules with npm ({error}); skipping")
         return 0
-    with open(MANIFEST_PATH, encoding="utf-8") as f:
-        vendored = json.load(f)
     if published == vendored:
         print(
             f"Rules manifest matches {PACKAGE}@{latest['version']} "

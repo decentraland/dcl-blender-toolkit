@@ -11,10 +11,15 @@ validate_emote = load_toolkit_module("ops.validate_emote")
 avatar_limitations = load_toolkit_module("ops.avatar_limitations")
 
 
-def emote_context(fps, start, end, strict=False, fps_base=1.0):
+def emote_context(fps, start, end, strict=False, fps_base=1.0, sampling_rate=1):
     """A scene with no rig: validation stops right after the fps and duration checks."""
     scene = SimpleNamespace(
-        dcl_tools=SimpleNamespace(emote_strict_validation=strict, emote_start_frame=start, emote_end_frame=end),
+        dcl_tools=SimpleNamespace(
+            emote_strict_validation=strict,
+            emote_start_frame=start,
+            emote_end_frame=end,
+            emote_sampling_rate=sampling_rate,
+        ),
         render=SimpleNamespace(fps=fps, fps_base=fps_base),
         objects=[],
     )
@@ -44,6 +49,13 @@ class TestEmoteTiming:
         assert not [m for m in result["errors"] if "framerate" in m], "fps never blocks"
         assert result["metrics"]["duration_s"] == round(end / fps, 2)
 
+    def test_sampling_rate_lowers_the_frame_rate_the_builder_infers(self):
+        # Exported every 2 frames, a 30 fps scene has keys 1/15 s apart, which the rule book reads as ~15 fps.
+        result = validate_emote.run_emote_validation(emote_context(30, 1, 300, sampling_rate=2))
+        assert result["metrics"]["exported_fps"] == 15
+        assert any("sampled every 2 frames" in m for m in result["warnings"])
+        assert not [m for m in result["errors"] if "Last key sits" in m], "sampling never changes the last key time"
+
     def test_fps_base_is_part_of_the_frame_rate_like_the_exporter(self):
         # 30 fps with an NTSC base is 30.03 fps in the exporter's formula, so frame 300 sits just under 10 s.
         result = validate_emote.run_emote_validation(emote_context(30, 1, 300, fps_base=1.001))
@@ -62,11 +74,24 @@ class TestEmoteTiming:
 
 
 class TestWearableLimits:
-    def test_every_type_resolves_to_the_rule_book(self):
-        tris = rules.manifest()["triangles"]
-        for identifier, (_label, category, hides) in avatar_limitations.WEARABLE_TYPES.items():
-            limits = avatar_limitations.wearable_limits(identifier)
-            assert limits["triangles"] == rules.triangle_limit(category, hides)
+    @pytest.mark.parametrize(
+        "identifier, triangles",
+        [
+            ("MASK", 500),
+            ("HAND_ACCESSORY", 1000),
+            ("HAT", 1500),
+            ("HAND_ACCESSORY_HIDE", 1500),
+            ("HELMET_HIDE_HEAD", 4000),
+        ],
+    )
+    def test_known_budgets(self, identifier, triangles):
+        # Values as of rules 0.7.x: a sync that changes them must update this table on purpose.
+        assert avatar_limitations.wearable_limits(identifier)["triangles"] == triangles
+
+    def test_every_type_has_a_category_the_rule_book_knows(self):
+        per_category = rules.manifest()["triangles"]["perCategory"]
+        for _label, category, _hides in avatar_limitations.WEARABLE_TYPES.values():
+            assert category in per_category
 
     def test_helmet_hiding_the_head_shows_the_capped_budget(self):
         tris = rules.manifest()["triangles"]

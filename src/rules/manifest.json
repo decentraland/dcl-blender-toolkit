@@ -1,5 +1,5 @@
 {
-  "version": "0.7.0",
+  "version": "0.7.1",
   "triangles": {
     "default": 1500,
     "perCategory": {
@@ -70,7 +70,9 @@
   "images": {
     "maxDecodePixels": 16777216,
     "inflateChunkBytes": 16384,
-    "maxScanPixels": 67108864
+    "maxScanPixels": 67108864,
+    "qrMaxSideRatio": 2,
+    "qrEdgeMarginRatio": 0.05
   },
   "boundingBox": {
     "width": 2.42,
@@ -163,7 +165,7 @@
   },
   "rendering": {
     "imageSizePx": 512,
-    "recipeVersion": 4,
+    "recipeVersion": 5,
     "bodyShapes": [
       "urn:decentraland:off-chain:base-avatars:BaseMale",
       "urn:decentraland:off-chain:base-avatars:BaseFemale"
@@ -195,7 +197,7 @@
       0.75,
       1
     ],
-    "maxCaptures": 20,
+    "maxCaptures": 28,
     "stress": {
       "skin": "00ff00",
       "azimuthDegrees": [
@@ -209,17 +211,33 @@
             "fraction": 0.5
           },
           {
-            "clip": "clap",
+            "clip": "run",
+            "fraction": 0.25
+          },
+          {
+            "clip": "run",
             "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.75
           }
         ],
         "legs": [
+          {
+            "clip": "jump",
+            "fraction": 0.75
+          },
           {
             "clip": "run",
             "fraction": 0.25
           },
           {
-            "clip": "jump",
+            "clip": "run",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
             "fraction": 0.75
           }
         ],
@@ -231,6 +249,32 @@
           {
             "clip": "dab",
             "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.25
+          },
+          {
+            "clip": "run",
+            "fraction": 0.75
+          }
+        ],
+        "hands": [
+          {
+            "clip": "clap",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.25
+          },
+          {
+            "clip": "run",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.75
           }
         ],
         "body": [
@@ -241,12 +285,20 @@
           {
             "clip": "run",
             "fraction": 0.25
+          },
+          {
+            "clip": "run",
+            "fraction": 0.5
+          },
+          {
+            "clip": "run",
+            "fraction": 0.75
           }
         ]
       },
       "categoryPoses": {
         "upper_body": "arms",
-        "hands_wear": "arms",
+        "hands_wear": "hands",
         "lower_body": "legs",
         "feet": "legs",
         "skin": "body",
@@ -271,7 +323,7 @@
   "ai": {
     "model": "claude-sonnet-5",
     "maxInputTokens": 40000,
-    "maxImages": 21,
+    "maxImages": 29,
     "timeoutMs": 300000,
     "maxRetries": 0,
     "thinkingBudgetTokens": 1024,
@@ -280,7 +332,8 @@
     "maxTextLength": 1200
   },
   "renderValid": {
-    "minSubjectRatio": 0.02,
+    "minSubjectRatio": 0.0005,
+    "warnSubjectRatio": 0.02,
     "backgroundTolerance": 24
   },
   "thumbnailHonesty": {

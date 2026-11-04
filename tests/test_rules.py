@@ -128,6 +128,11 @@ class TestSyncScript:
         tarball = self._tarball({"package/package.json": b"{}", sync_rules.MANIFEST_IN_TARBALL: manifest})
         assert sync_rules.manifest_from_tarball(tarball) == manifest
 
+    def test_rejects_a_manifest_without_a_version_before_writing(self, tmp_path):
+        with pytest.raises(RuntimeError, match="string version"):
+            sync_rules.write_vendored(b'{"x": 1}', "0.0.1", rules_dir=str(tmp_path))
+        assert not (tmp_path / "manifest.json").exists() and not (tmp_path / "manifest.lock").exists()
+
     def test_rejects_a_tarball_without_the_manifest(self):
         with pytest.raises(RuntimeError, match="not in the package tarball"):
             sync_rules.manifest_from_tarball(self._tarball({"package/package.json": b"{}"}))
@@ -145,6 +150,7 @@ class TestSyncScript:
         monkeypatch.setattr(sync_rules, "read_lock", lambda: {"packageVersion": "0.1.0", "rulesVersion": "0.1.0"})
         monkeypatch.setattr(sync_rules, "package_metadata", lambda version: {"version": "0.2.0", "tarball": "t"})
         monkeypatch.setattr(sync_rules, "fetch", lambda url: b"")
+        monkeypatch.setattr(sync_rules, "verify_integrity", lambda data, integrity: None)
         monkeypatch.setattr(sync_rules, "manifest_from_tarball", lambda data: json.dumps(manifest).encode())
 
     def test_check_warns_when_the_numbers_changed_but_never_fails(self, monkeypatch, capsys):
@@ -162,6 +168,16 @@ class TestSyncScript:
             self._published(monkeypatch, json.load(f))
         assert sync_rules.check() == 0
         assert "::warning::" not in capsys.readouterr().out
+
+    def test_check_tolerates_a_truncated_download(self, monkeypatch, capsys):
+        def truncated(url):
+            raise EOFError("Compressed file ended before the end-of-stream marker was reached")
+
+        with open(os.path.join(RULES_DIR, "manifest.json"), encoding="utf-8") as f:
+            self._published(monkeypatch, json.load(f))
+        monkeypatch.setattr(sync_rules, "fetch", truncated)
+        assert sync_rules.check() == 0
+        assert "skipping" in capsys.readouterr().out
 
     def test_check_tolerates_being_offline(self, monkeypatch, capsys):
         def offline(version):

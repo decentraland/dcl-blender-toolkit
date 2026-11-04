@@ -64,9 +64,15 @@ def run_emote_validation(context):
     render = context.scene.render
     fps = render.fps * render.fps_base
     result["metrics"]["fps"] = round(fps, 3)
-    if abs(fps - expected_fps) > fps_tolerance:
+    # The rule book infers fps from the spacing of the exported keys, and the export samples every N frames.
+    sampling_rate = max(int(props.emote_sampling_rate), 1)
+    exported_fps = fps / sampling_rate
+    result["metrics"]["exported_fps"] = round(exported_fps, 3)
+    if abs(exported_fps - expected_fps) > fps_tolerance:
+        sampled = f" ({fps:g}fps scene sampled every {sampling_rate} frames)" if sampling_rate > 1 else ""
         push(
-            f"Scene framerate is {fps:g}fps; Decentraland emotes are expected at {expected_fps}fps (±{fps_tolerance})."
+            f"Exported framerate reads as {exported_fps:g}fps{sampled}; "
+            f"Decentraland emotes are expected at {expected_fps}fps (±{fps_tolerance})."
         )
 
     if end_frame <= start_frame:
