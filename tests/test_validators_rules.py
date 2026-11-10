@@ -85,8 +85,14 @@ class TestWearableLimits:
         ],
     )
     def test_known_budgets(self, identifier, triangles):
-        # Values as of rules 0.7.x: a sync that changes them must update this table on purpose.
+        # Values as of rules 0.8.x: a sync that changes them must update this table on purpose.
         assert avatar_limitations.wearable_limits(identifier)["triangles"] == triangles
+
+    def test_tolerated_triangles_follow_the_rule_book_margin(self):
+        for identifier in avatar_limitations.WEARABLE_TYPES:
+            limits = avatar_limitations.wearable_limits(identifier)
+            assert limits["triangles_tolerated"] == rules.triangle_tolerated_limit(limits["triangles"])
+            assert limits["triangles_tolerated"] > limits["triangles"]
 
     def test_every_type_has_a_category_the_rule_book_knows(self):
         per_category = rules.manifest()["triangles"]["perCategory"]

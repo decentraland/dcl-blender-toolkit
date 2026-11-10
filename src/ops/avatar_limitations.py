@@ -1,6 +1,6 @@
 import bpy
 
-from ..rules import manifest, rules_version, triangle_limit
+from ..rules import manifest, rules_version, triangle_limit, triangle_status, triangle_tolerated_limit
 
 # Toolkit wearable types mapped to the rule book's category and hidden slots.
 WEARABLE_TYPES = {
@@ -35,6 +35,7 @@ def wearable_limits(wearable_type):
     max_size = rules["textures"]["maxSize"]
     return {
         "triangles": triangle_limit(category, hides),
+        "triangles_tolerated": triangle_tolerated_limit(triangle_limit(category, hides)),
         "textures": rules["textures"][bucket],
         "materials": rules["materials"][bucket],
         "skin_material": rules["materials"]["avatarSkinMat"],
@@ -136,9 +137,17 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
 
         # Check for warnings
         warnings = []
-        if current_usage["triangles"] > limitations["triangles"]:
+        triangles_over = current_usage["triangles"] - limitations["triangles"]
+        triangles_state = triangle_status(current_usage["triangles"], limitations["triangles"])
+        if triangles_state == "warning":
             warnings.append(
-                f"⚠️  TRIANGLES: Exceeding limit by {current_usage['triangles'] - limitations['triangles']:,}"
+                f"⚠️  TRIANGLES: {triangles_over:,} over the budget. Up to {limitations['triangles_tolerated']:,} "
+                "is accepted with a warning; trim geometry to stay within the budget"
+            )
+        elif triangles_state == "error":
+            warnings.append(
+                f"❌ TRIANGLES: Exceeding limit by {triangles_over:,}. Above {limitations['triangles_tolerated']:,} "
+                "the item is rejected"
             )
         if current_usage["materials"] > limitations["materials"]:
             warnings.append(f"⚠️  MATERIALS: Exceeding limit by {current_usage['materials'] - limitations['materials']}")
@@ -213,7 +222,10 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
 
             col.label(
                 text=f"Triangles: {current_usage['triangles']:,} / {limitations['triangles']:,} ({triangles_pct}%)",
-                icon=get_icon(triangles_pct),
+                # over the budget but within the tolerated margin is a warning in the rule book, not a rejection
+                icon="WARNING_LARGE"
+                if triangle_status(current_usage["triangles"], limitations["triangles"]) == "warning"
+                else get_icon(triangles_pct),
             )
             col.label(
                 text=f"Materials: {current_usage['materials']} / {limitations['materials']} ({materials_pct}%)",

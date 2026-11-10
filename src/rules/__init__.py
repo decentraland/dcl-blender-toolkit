@@ -33,3 +33,21 @@ def triangle_limit(category, hides=()):
     if category == "helmet" or hides_head:
         return min(limit, tris["hiddenHeadLimit"])
     return limit
+
+
+def triangle_tolerated_limit(limit):
+    """The count up to which the rule book only warns: the budget plus triangles.warningMarginRatio, rounded down."""
+    return limit + int(limit * manifest()["triangles"].get("warningMarginRatio", 0))
+
+
+def triangle_status(count, limit):
+    """The rule book's severity for a count: ok within the budget, warning within the tolerated margin, error beyond."""
+    if count <= limit:
+        return "ok"
+    return "warning" if count <= triangle_tolerated_limit(limit) else "error"
+
+
+def emote_model_limit():
+    """Bytes an emote's model may weigh. With no emote headroom (0) this is the whole item ceiling: only the total counts."""
+    sizes = manifest()["fileSize"]
+    return sizes["emoteBytes"] - sizes.get("emoteModelHeadroomBytes", sizes["modelHeadroomBytes"])
