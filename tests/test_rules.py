@@ -46,16 +46,21 @@ class TestProvenance:
 
     def test_manifest_has_the_blocks_the_validators_read(self, rules):
         manifest = rules.manifest()
-        assert {"default", "perCategory", "hiddenHandsBudget", "headSlots", "hiddenHeadLimit"} <= set(
-            manifest["triangles"]
-        )
+        assert {
+            "default",
+            "perCategory",
+            "hiddenHandsBudget",
+            "headSlots",
+            "hiddenHeadLimit",
+            "warningMarginRatio",
+        } <= set(manifest["triangles"])
         assert {"default", "skin", "maxSize"} <= set(manifest["textures"])
         assert {"default", "skin", "avatarSkinMat"} <= set(manifest["materials"])
         assert {"expectedFps", "fpsTolerance", "maxDurationSeconds", "rootMotion"} <= set(manifest["emote"])
         assert {"horizontalErrorMeters", "verticalWarnMeters", "verticalErrorMeters"} <= set(
             manifest["emote"]["rootMotion"]
         )
-        assert {"emoteBytes", "modelHeadroomBytes"} <= set(manifest["fileSize"])
+        assert {"emoteBytes", "emoteModelHeadroomBytes", "thumbnailBytes"} <= set(manifest["fileSize"])
         assert re.fullmatch(r"\d+\.\d+\.\d+", rules.rules_version())
 
 
@@ -76,6 +81,37 @@ class TestTriangleLimit:
         tris = rules.manifest()["triangles"]
         assert rules.triangle_limit("hat", ("head",)) == tris["hiddenHeadLimit"]
         assert rules.triangle_limit("helmet") <= tris["hiddenHeadLimit"]
+
+
+class TestTriangleTolerance:
+    """Up to warningMarginRatio over the budget the rule book warns; beyond it, it rejects."""
+
+    def test_tolerated_limit_is_the_budget_plus_the_margin_rounded_down(self, rules):
+        # Fixed expectations for the rule book's 10%: a formula checked against itself would pass even if wrong.
+        assert rules.manifest()["triangles"]["warningMarginRatio"] == 0.1
+        assert rules.triangle_tolerated_limit(1500) == 1650
+        assert rules.triangle_tolerated_limit(15) == 16
+        assert rules.triangle_tolerated_limit(9) == 9
+
+    def test_status_at_the_boundaries(self, rules):
+        limit = rules.triangle_limit("upper_body")
+        tolerated = rules.triangle_tolerated_limit(limit)
+        assert tolerated > limit
+        assert rules.triangle_status(limit, limit) == "ok"
+        assert rules.triangle_status(limit + 1, limit) == "warning"
+        assert rules.triangle_status(tolerated, limit) == "warning"
+        assert rules.triangle_status(tolerated + 1, limit) == "error"
+
+
+class TestEmoteModelLimit:
+    def test_emotes_use_their_own_headroom(self, rules):
+        sizes = rules.manifest()["fileSize"]
+        assert rules.emote_model_limit() == sizes["emoteBytes"] - sizes["emoteModelHeadroomBytes"]
+
+    def test_room_for_the_images_is_the_ceiling_minus_the_thumbnail_cap(self, rules):
+        sizes = rules.manifest()["fileSize"]
+        assert rules.emote_room_for_images() == sizes["emoteBytes"] - sizes["thumbnailBytes"]
+        assert rules.emote_room_for_images() < rules.emote_model_limit()
 
 
 class TestValidatorsReadTheManifest:
@@ -99,7 +135,7 @@ class TestValidatorsReadTheManifest:
 
     def test_export_size_limit_comes_from_the_manifest(self):
         source = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
-        assert 'manifest()["fileSize"]' in source and 'sizes["emoteBytes"] - sizes["modelHeadroomBytes"]' in source
+        assert "emote_model_limit()" in source and "emote_room_for_images()" in source
         assert "file_size > 1024 * 1024" not in source
 
     def test_fps_is_compared_with_the_tolerance(self):

@@ -2,7 +2,7 @@ import os
 
 import bpy
 
-from ..rules import manifest
+from ..rules import emote_model_limit, emote_room_for_images, manifest
 from .emote_utils import (
     apply_action_assignments,
     claim_export_names,
@@ -196,14 +196,21 @@ class OBJECT_OT_export_emote_glb(bpy.types.Operator):
         skipped = len(all_prop_armatures) - len(prop_armatures)
         if skipped:
             prop_note += f" Skipped {skipped} prop rig(s) not paired with this emote."
-        sizes = manifest()["fileSize"]
-        # The item limit covers model, thumbnail and rarity image; the model alone gets the limit minus the headroom.
-        max_bytes = sizes["emoteBytes"] - sizes["modelHeadroomBytes"]
-        if file_size > max_bytes:
+        # The item limit covers model, thumbnail and rarity image, and the rule book has no separate cap on the model.
+        # A model that fits can still leave too little room for the other two, so that case gets its own warning.
+        item_mb = manifest()["fileSize"]["emoteBytes"] / (1024 * 1024)
+        counted = f"the thumbnail and rarity image count toward the {item_mb:g} MB total"
+        if file_size > emote_model_limit():
             self.report(
                 {"WARNING"},
-                f"Exported {out_path} ({size_mb:.2f} MB). Decentraland rejects emote models above "
-                f"{max_bytes / (1024 * 1024):g} MB.{prop_note}",
+                f"Exported {out_path} ({size_mb:.2f} MB). Decentraland rejects emotes above {item_mb:g} MB in total, "
+                f"thumbnail and rarity image included.{prop_note}",
+            )
+        elif file_size > emote_room_for_images():
+            self.report(
+                {"WARNING"},
+                f"Exported {out_path} ({size_mb:.2f} MB). It fits, but {counted}: a large thumbnail could push the "
+                f"emote over.{prop_note}",
             )
         else:
             self.report({"INFO"}, f"Exported {out_path} ({size_mb:.2f} MB).{prop_note}")
