@@ -37,7 +37,7 @@ def triangle_limit(category, hides=()):
 
 def triangle_tolerated_limit(limit):
     """The count up to which the rule book only warns: the budget plus triangles.warningMarginRatio, rounded down."""
-    return limit + int(limit * manifest()["triangles"].get("warningMarginRatio", 0))
+    return limit + int(limit * manifest()["triangles"]["warningMarginRatio"])
 
 
 def triangle_status(count, limit):
@@ -50,4 +50,10 @@ def triangle_status(count, limit):
 def emote_model_limit():
     """Bytes an emote's model may weigh. With no emote headroom (0) this is the whole item ceiling: only the total counts."""
     sizes = manifest()["fileSize"]
-    return sizes["emoteBytes"] - sizes.get("emoteModelHeadroomBytes", sizes["modelHeadroomBytes"])
+    return sizes["emoteBytes"] - sizes["emoteModelHeadroomBytes"]
+
+
+def emote_room_for_images():
+    """Bytes the thumbnail may take: an emote model heavier than the item ceiling minus this may not fit once it is added."""
+    sizes = manifest()["fileSize"]
+    return sizes["emoteBytes"] - sizes["thumbnailBytes"]

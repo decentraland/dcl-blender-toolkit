@@ -94,6 +94,20 @@ class TestWearableLimits:
             assert limits["triangles_tolerated"] == rules.triangle_tolerated_limit(limits["triangles"])
             assert limits["triangles_tolerated"] > limits["triangles"]
 
+    @pytest.mark.parametrize(
+        "count, icon",
+        [
+            (1000, "CHECKMARK"),
+            (1200, "WARNING_LARGE"),  # 80% of the budget
+            (1500, "WARNING_LARGE"),  # exactly the budget: accepted, not a rejection
+            (1501, "WARNING_LARGE"),  # inside the tolerated margin
+            (1650, "WARNING_LARGE"),  # the last tolerated count
+            (1651, "ERROR"),
+        ],
+    )
+    def test_triangle_icon_follows_the_rule_book_severity(self, count, icon):
+        assert avatar_limitations.triangles_icon(count, 1500) == icon
+
     def test_every_type_has_a_category_the_rule_book_knows(self):
         per_category = rules.manifest()["triangles"]["perCategory"]
         for _label, category, _hides in avatar_limitations.WEARABLE_TYPES.values():

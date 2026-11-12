@@ -27,15 +27,27 @@ def _format_count(value):
     return f"{value / 1000:g}K" if value >= 1000 else str(value)
 
 
+def triangles_icon(count, limit):
+    """The dialog icon for a triangle count, by the rule book's severity: only a rejection shows the error icon."""
+    state = triangle_status(count, limit)
+    if state == "error":
+        return "ERROR"
+    if state == "warning":
+        return "WARNING_LARGE"
+    # within the budget, the count at exactly the limit included: nudge from 80% of it, as the other rows do
+    return "WARNING_LARGE" if limit and count / limit >= 0.8 else "CHECKMARK"
+
+
 def wearable_limits(wearable_type):
     """Triangle, material and texture limits for a toolkit wearable type, from the vendored rule book."""
     rules = manifest()
     _label, category, hides = WEARABLE_TYPES[wearable_type]
     bucket = "skin" if category == "skin" else "default"
     max_size = rules["textures"]["maxSize"]
+    triangles = triangle_limit(category, hides)
     return {
-        "triangles": triangle_limit(category, hides),
-        "triangles_tolerated": triangle_tolerated_limit(triangle_limit(category, hides)),
+        "triangles": triangles,
+        "triangles_tolerated": triangle_tolerated_limit(triangles),
         "textures": rules["textures"][bucket],
         "materials": rules["materials"][bucket],
         "skin_material": rules["materials"]["avatarSkinMat"],
@@ -222,10 +234,7 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
 
             col.label(
                 text=f"Triangles: {current_usage['triangles']:,} / {limitations['triangles']:,} ({triangles_pct}%)",
-                # over the budget but within the tolerated margin is a warning in the rule book, not a rejection
-                icon="WARNING_LARGE"
-                if triangle_status(current_usage["triangles"], limitations["triangles"]) == "warning"
-                else get_icon(triangles_pct),
+                icon=triangles_icon(current_usage["triangles"], limitations["triangles"]),
             )
             col.label(
                 text=f"Materials: {current_usage['materials']} / {limitations['materials']} ({materials_pct}%)",
