@@ -46,25 +46,38 @@ def triangles_icon(count, limit):
     return "WARNING_LARGE" if limit and count / limit >= 0.8 else "CHECKMARK"
 
 
-def _principled_input(material, *names):
-    """A Principled BSDF input of the material by name (names differ between Blender versions), or None."""
+def _principled_node(material):
+    """The Principled BSDF that feeds the material's output, or the first one in the tree when that can't be followed."""
     tree = getattr(material, "node_tree", None)
     if not getattr(material, "use_nodes", False) or tree is None:
         return None
+    principled = [node for node in tree.nodes if node.type == "BSDF_PRINCIPLED"]
     for node in tree.nodes:
-        if node.type != "BSDF_PRINCIPLED":
+        if node.type != "OUTPUT_MATERIAL" or not getattr(node, "is_active_output", True):
             continue
-        for name in names:
-            socket = node.inputs.get(name)
-            if socket is not None:
-                return socket
+        surface = node.inputs.get("Surface")
+        for link in getattr(surface, "links", None) or ():
+            if link.from_node.type == "BSDF_PRINCIPLED":
+                return link.from_node
+    return principled[0] if principled else None
+
+
+def _input(node, *names):
+    """An input of the node by name (names differ between Blender versions), or None."""
+    for name in names:
+        socket = node.inputs.get(name)
+        if socket is not None:
+            return socket
     return None
 
 
 def material_is_emissive(material):
     """Approximates what the glTF exporter writes as emission: a strength above zero and a colour that is not black."""
-    strength = _principled_input(material, "Emission Strength")
-    color = _principled_input(material, "Emission Color", "Emission")
+    node = _principled_node(material)
+    if node is None:
+        return False
+    strength = _input(node, "Emission Strength")
+    color = _input(node, "Emission Color", "Emission")
     if color is None:
         return False
     if strength is not None and not strength.is_linked and strength.default_value <= 0:
@@ -73,14 +86,15 @@ def material_is_emissive(material):
 
 
 def material_is_transparent(material):
-    """Approximates the exporter's alpha mode: an Alpha input that is linked or below 1, or a blended/clipped material."""
-    alpha = _principled_input(material, "Alpha")
-    if alpha is not None and (alpha.is_linked or alpha.default_value < 1):
-        return True
-    # Before 4.2 the exporter reads the blend mode. From 4.2 on that property mirrors the render method and says
-    # nothing about the export, so only the Alpha input counts there.
+    """Approximates the alpha mode the glTF exporter writes, which it decides differently before and after Blender 4.2."""
+    # Before 4.2 the exporter writes alphaMode from the blend mode alone, whatever the Alpha input says. From 4.2 on
+    # the blend mode mirrors the render method and says nothing about the export, so only the Alpha input counts there.
     version = tuple(getattr(getattr(bpy, "app", None), "version", (4, 2, 0)))
-    return version < (4, 2, 0) and getattr(material, "blend_method", "OPAQUE") in {"BLEND", "CLIP", "HASHED"}
+    if version < (4, 2, 0):
+        return getattr(material, "blend_method", "OPAQUE") in {"BLEND", "CLIP", "HASHED"}
+    node = _principled_node(material)
+    alpha = _input(node, "Alpha") if node is not None else None
+    return alpha is not None and bool(alpha.is_linked or alpha.default_value < 1)
 
 
 def effective_material_limit(limits, usage):

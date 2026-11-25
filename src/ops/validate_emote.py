@@ -1,4 +1,5 @@
 import math
+import re
 
 import bpy
 
@@ -15,6 +16,39 @@ from .emote_utils import (
     pose_bone_world_location,
     rotation_data_path,
 )
+
+
+def hips_marker(pose_bones, hips_pattern):
+    """The bone whose position stands for the avatar's root motion, chosen as the rule book chooses the exported node.
+
+    "Avatar_Hips" first, then any bone matching the rule book's hips pattern (any case, so "mixamorig:Hips" too). The
+    rig's upper-body control is the last resort: it can sit off the hips, which matters now that the distance is
+    measured from the origin. None when the rig has no such bone.
+    """
+    exact = pose_bones.get("Avatar_Hips")
+    if exact:
+        return exact
+    for bone in pose_bones:
+        if re.search(hips_pattern, bone.name, re.IGNORECASE):
+            return bone
+    return pose_bones.get("CTRL_Avatar_UpperBody")
+
+
+def root_motion_extent(positions):
+    """(horizontal, vertical) reach of a sequence of world positions with Blender's Z up.
+
+    Horizontal is the farthest any position gets from the vertical axis through the origin, the centre of the
+    animation area, so the first one counts too. Vertical is the largest travel from the first position.
+    """
+    max_horizontal = 0.0
+    max_vertical = 0.0
+    first_z = None
+    for x, y, z in positions:
+        if first_z is None:
+            first_z = z
+        max_horizontal = max(max_horizontal, math.sqrt(x * x + y * y))
+        max_vertical = max(max_vertical, abs(z - first_z))
+    return max_horizontal, max_vertical
 
 
 def _missing_boundary_channels(action, pose_bones, start_frame, end_frame):
@@ -181,33 +215,24 @@ def run_emote_validation(context):
             f"Avatar action '{action.name}' should end in '_Avatar' when the emote carries a prop.",
         )
 
-    # Approximate root motion, measured on a hips-like bone rather than the exported hips track.
-    marker = None
-    for marker_name in ("CTRL_Avatar_UpperBody", "Avatar_Hips", "Hips"):
-        marker = armature.pose.bones.get(marker_name)
-        if marker:
-            break
-
-    original_frame = context.scene.frame_current
+    # Approximate root motion, measured on the rig's hips bone rather than the exported hips track.
+    marker = hips_marker(armature.pose.bones, root_motion["hipsPattern"])
     max_horizontal = 0.0
     max_vertical = 0.0
-
-    reference = None
-    try:
-        for frame in range(start_frame, end_frame + 1):
-            context.scene.frame_set(frame)
-            if marker:
+    if marker is None:
+        # The armature's own origin rarely moves, so reading it would pass every emote without measuring anything.
+        push("No hips bone found on the avatar rig, so root motion was not checked.")
+    else:
+        original_frame = context.scene.frame_current
+        positions = []
+        try:
+            for frame in range(start_frame, end_frame + 1):
+                context.scene.frame_set(frame)
                 position = pose_bone_world_location(armature, marker)
-            else:
-                position = armature.matrix_world.translation.copy()
-            if reference is None:
-                reference = position.copy()
-            # Horizontally the rule is the animation area, a cylinder around the scene's origin, so every frame's
-            # distance from that axis counts, the first frame included. Vertically it is the travel from the start.
-            max_horizontal = max(max_horizontal, math.sqrt(position.x * position.x + position.y * position.y))
-            max_vertical = max(max_vertical, abs(position.z - reference.z))
-    finally:
-        context.scene.frame_set(original_frame)
+                positions.append((position.x, position.y, position.z))
+        finally:
+            context.scene.frame_set(original_frame)
+        max_horizontal, max_vertical = root_motion_extent(positions)
 
     result["metrics"]["max_horizontal_m"] = round(max_horizontal, 4)
     result["metrics"]["max_vertical_m"] = round(max_vertical, 4)

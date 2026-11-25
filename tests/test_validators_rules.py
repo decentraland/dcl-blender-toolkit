@@ -150,10 +150,28 @@ def _socket(value, linked=False):
     return SimpleNamespace(default_value=value, is_linked=linked)
 
 
-def _material(inputs=None, blend_method="OPAQUE", use_nodes=True):
-    """A stand-in for a Blender material with one Principled BSDF whose inputs are given by name."""
-    node = SimpleNamespace(type="BSDF_PRINCIPLED", inputs=inputs or {})
-    return SimpleNamespace(use_nodes=use_nodes, node_tree=SimpleNamespace(nodes=[node]), blend_method=blend_method)
+class _Inputs(dict):
+    """Node inputs: looked up by name like Blender's collection."""
+
+
+def _principled(inputs=None):
+    return SimpleNamespace(type="BSDF_PRINCIPLED", inputs=_Inputs(inputs or {}))
+
+
+def _material(inputs=None, blend_method="OPAQUE", use_nodes=True, nodes=None):
+    """A stand-in for a Blender material: one Principled BSDF with the given inputs, unless `nodes` says otherwise."""
+    tree = SimpleNamespace(nodes=nodes if nodes is not None else [_principled(inputs)])
+    return SimpleNamespace(use_nodes=use_nodes, node_tree=tree, blend_method=blend_method)
+
+
+@pytest.fixture
+def blender(monkeypatch):
+    """Sets the Blender version the module sees; the test stub has none, which reads as 4.2."""
+
+    def set_version(version):
+        monkeypatch.setattr(avatar_limitations.bpy, "app", SimpleNamespace(version=version), raising=False)
+
+    return set_version
 
 
 class TestMaterialTraits:
@@ -175,16 +193,92 @@ class TestMaterialTraits:
         older = _material({"Emission": _socket((0.2, 0.2, 0.2, 1.0)), "Emission Strength": _socket(2.0)})
         assert avatar_limitations.material_is_emissive(older)
 
-    def test_transparent_is_an_alpha_input_that_is_linked_or_below_one(self):
+    def test_from_4_2_transparent_is_an_alpha_input_that_is_linked_or_below_one(self, blender):
+        blender((4, 2, 0))
         assert avatar_limitations.material_is_transparent(_material({"Alpha": _socket(0.5)}))
         assert avatar_limitations.material_is_transparent(_material({"Alpha": _socket(1.0, linked=True)}))
         assert not avatar_limitations.material_is_transparent(_material({"Alpha": _socket(1.0)}))
-
-    def test_the_blend_mode_alone_says_nothing_from_blender_4_2_on(self):
-        # there the property mirrors the render method (a new material reads HASHED) and the exporter ignores it
+        # there the blend mode mirrors the render method (a new material reads HASHED) and the exporter ignores it
         assert not avatar_limitations.material_is_transparent(_material({"Alpha": _socket(1.0)}, blend_method="HASHED"))
 
-    def test_a_material_without_nodes_has_neither(self):
+    def test_before_4_2_only_the_blend_mode_counts_as_the_exporter_writes_it(self, blender):
+        blender((3, 6, 0))
+        # a lowered or linked Alpha on an opaque material still exports as OPAQUE: no third material for it
+        assert not avatar_limitations.material_is_transparent(_material({"Alpha": _socket(0.5)}))
+        assert not avatar_limitations.material_is_transparent(_material({"Alpha": _socket(1.0, linked=True)}))
+        for mode in ("BLEND", "CLIP", "HASHED"):
+            assert avatar_limitations.material_is_transparent(_material({"Alpha": _socket(1.0)}, blend_method=mode))
+        assert not avatar_limitations.material_is_transparent(_material({"Alpha": _socket(1.0)}, blend_method="OPAQUE"))
+
+    def test_reads_the_principled_that_feeds_the_output_not_the_first_in_the_tree(self, blender):
+        blender((4, 2, 0))
+        unused = _principled(
+            {"Alpha": _socket(0.2), "Emission Color": _socket((1.0, 1.0, 1.0, 1.0)), "Emission Strength": _socket(1.0)}
+        )
+        used = _principled(
+            {"Alpha": _socket(1.0), "Emission Color": _socket((0.0, 0.0, 0.0, 1.0)), "Emission Strength": _socket(1.0)}
+        )
+        output = SimpleNamespace(
+            type="OUTPUT_MATERIAL",
+            is_active_output=True,
+            inputs=_Inputs({"Surface": SimpleNamespace(links=[SimpleNamespace(from_node=used)])}),
+        )
+        material = _material(nodes=[unused, used, output])
+        assert not avatar_limitations.material_is_emissive(material)
+        assert not avatar_limitations.material_is_transparent(material)
+
+    def test_a_material_without_nodes_has_neither(self, blender):
+        blender((4, 2, 0))
         plain = _material(use_nodes=False)
         assert not avatar_limitations.material_is_emissive(plain)
         assert not avatar_limitations.material_is_transparent(plain)
+
+
+class _Bones:
+    """Pose bones: iterable, and looked up by name like Blender's collection."""
+
+    def __init__(self, *names):
+        self._bones = [SimpleNamespace(name=name) for name in names]
+
+    def __iter__(self):
+        return iter(self._bones)
+
+    def get(self, name):
+        return next((bone for bone in self._bones if bone.name == name), None)
+
+
+class TestRootMotionMeasure:
+    """Which bone stands for the avatar, and how far it gets from the centre of the animation area."""
+
+    def test_the_exported_hips_bone_wins_over_the_control_bone(self):
+        bones = _Bones("CTRL_Avatar_UpperBody", "Avatar_Spine", "Avatar_Hips")
+        assert validate_emote.hips_marker(bones, "hips").name == "Avatar_Hips"
+
+    def test_any_hips_bone_matches_the_rule_book_pattern_in_any_case(self):
+        assert validate_emote.hips_marker(_Bones("mixamorig:Spine", "mixamorig:Hips"), "hips").name == "mixamorig:Hips"
+        assert validate_emote.hips_marker(_Bones("root", "HIPS"), "hips").name == "HIPS"
+
+    def test_the_control_bone_is_the_last_resort(self):
+        assert validate_emote.hips_marker(_Bones("CTRL_Avatar_UpperBody", "Avatar_Spine"), "hips").name == (
+            "CTRL_Avatar_UpperBody"
+        )
+
+    def test_no_hips_bone_means_nothing_to_measure(self):
+        assert validate_emote.hips_marker(_Bones("Bone", "Bone.001"), "hips") is None
+
+    def test_horizontal_is_the_distance_from_the_origin_not_the_travel(self):
+        # side to side inside the cylinder: 1.8 m of travel, never more than 0.9 m from the centre
+        horizontal, vertical = validate_emote.root_motion_extent([(-0.9, 0.0, 1.0), (0.0, 0.0, 1.0), (0.9, 0.0, 1.0)])
+        assert horizontal == pytest.approx(0.9)
+        assert vertical == 0
+        # starting outside counts even when the avatar barely moves afterwards
+        horizontal, _ = validate_emote.root_motion_extent([(2.0, 0.0, 1.0), (2.1, 0.0, 1.0)])
+        assert horizontal == pytest.approx(2.1)
+
+    def test_both_horizontal_axes_count_and_vertical_is_travel_from_the_start(self):
+        horizontal, vertical = validate_emote.root_motion_extent([(0.0, 0.0, 0.95), (0.6, 0.8, 2.45), (0.0, 0.0, 0.5)])
+        assert horizontal == pytest.approx(1.0)
+        assert vertical == pytest.approx(1.5)
+
+    def test_no_positions_measure_nothing(self):
+        assert validate_emote.root_motion_extent([]) == (0.0, 0.0)

@@ -187,11 +187,10 @@ class TestValidatorsReadTheManifest:
         assert "emote_model_limit()" in source and "emote_room_for_images()" in source
         assert "file_size > 1024 * 1024" not in source
 
-    def test_root_motion_is_measured_from_the_centre_and_graded_by_the_rule_book(self):
+    def test_root_motion_is_graded_by_the_rule_book(self):
         source = read_source(os.path.join(SRC_DIR, "ops", "validate_emote.py"))
         assert "root_motion_status(max_horizontal)" in source
-        # the horizontal measure is the distance from the scene's origin, not the travel from the first frame
-        assert "position.x - reference.x" not in source and "position.x * position.x" in source
+        assert 'hips_marker(armature.pose.bones, root_motion["hipsPattern"])' in source
 
     def test_the_skin_material_is_recognised_by_the_rule_book_not_by_one_name(self):
         source = read_source(os.path.join(SRC_DIR, "ops", "avatar_limitations.py"))
