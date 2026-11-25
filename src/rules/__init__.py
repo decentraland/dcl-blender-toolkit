@@ -33,3 +33,52 @@ def triangle_limit(category, hides=()):
     if category == "helmet" or hides_head:
         return min(limit, tris["hiddenHeadLimit"])
     return limit
+
+
+def triangle_tolerated_limit(limit):
+    """The count up to which the rule book only warns: the budget plus triangles.warningMarginRatio, rounded down."""
+    return limit + int(limit * manifest()["triangles"]["warningMarginRatio"])
+
+
+def triangle_status(count, limit):
+    """The rule book's severity for a count: ok within the budget, warning within the tolerated margin, error beyond."""
+    if count <= limit:
+        return "ok"
+    return "warning" if count <= triangle_tolerated_limit(limit) else "error"
+
+
+def emote_model_limit():
+    """Bytes an emote's model may weigh. With no emote headroom (0) this is the whole item ceiling: only the total counts."""
+    sizes = manifest()["fileSize"]
+    return sizes["emoteBytes"] - sizes["emoteModelHeadroomBytes"]
+
+
+def emote_room_for_images():
+    """Bytes the thumbnail may take: an emote model heavier than the item ceiling minus this may not fit once it is added."""
+    sizes = manifest()["fileSize"]
+    return sizes["emoteBytes"] - sizes["thumbnailBytes"]
+
+
+def is_skin_material(name):
+    """Whether the engine treats a material as the avatar's skin: its name contains materials.skinNameToken, any case.
+
+    That is how the explorer picks what it tints, so "AvatarSkin_MAT.001", the name Blender gives a copy, is skin too.
+    """
+    token = manifest()["materials"]["skinNameToken"]
+    return bool(token) and token.lower() in name.lower()
+
+
+def material_limit(category, emissive_or_transparent):
+    """Materials a wearable may use: one more than the default when it uses emission or transparency; skins keep theirs."""
+    materials = manifest()["materials"]
+    if category == "skin":
+        return materials["skin"]
+    return materials["default"] + (materials["extraWithEmissionOrAlpha"] if emissive_or_transparent else 0)
+
+
+def root_motion_status(horizontal_m):
+    """The rule book's severity for the hips' distance from the centre of the animation area, in metres."""
+    limits = manifest()["emote"]["rootMotion"]
+    if horizontal_m > limits["horizontalErrorMeters"]:
+        return "error"
+    return "warning" if horizontal_m > limits["horizontalWarnMeters"] else "ok"

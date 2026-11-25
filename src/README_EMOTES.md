@@ -29,7 +29,7 @@ This add-on includes a full Decentraland emote pipeline in the `Emotes` section.
 - Clip length is `<= 300` frames.
 - There is only one armature action prepared for export.
 - Deform channels are keyed at first and last frame.
-- Approximate horizontal and vertical displacement stays within 1m guidance.
+- The hips stay within 1 m of the centre of the animation area (up to 1.5 m only warns) and near the ground. Approximate: measured on the rig, the Builder measures the exported clip.
 
 ## Manual QA Checklist
 
