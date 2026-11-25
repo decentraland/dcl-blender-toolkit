@@ -18,19 +18,21 @@ from .emote_utils import (
 )
 
 
-def hips_marker(pose_bones, hips_pattern):
+def hips_marker(pose_bones, hips_pattern, deform_bones=()):
     """The bone whose position stands for the avatar's root motion, chosen as the rule book chooses the exported node.
 
-    "Avatar_Hips" first, then any bone matching the rule book's hips pattern (any case, so "mixamorig:Hips" too). The
-    rig's upper-body control is the last resort: it can sit off the hips, which matters now that the distance is
-    measured from the origin. None when the rig has no such bone.
+    "Avatar_Hips" first, then any bone matching the rule book's hips pattern (any case, so "mixamorig:Hips" too):
+    deform bones before the rest, since those are the ones exported and a custom rig may also have a control or
+    mechanism bone with "hips" in its name. The rig's upper-body control is the last resort: it can sit off the hips,
+    which matters now that the distance is measured from the origin. None when the rig has no such bone.
     """
     exact = pose_bones.get("Avatar_Hips")
     if exact:
         return exact
-    for bone in pose_bones:
-        if re.search(hips_pattern, bone.name, re.IGNORECASE):
-            return bone
+    for candidates in (deform_bones, pose_bones):
+        for bone in candidates:
+            if re.search(hips_pattern, bone.name, re.IGNORECASE):
+                return bone
     return pose_bones.get("CTRL_Avatar_UpperBody")
 
 
@@ -216,7 +218,7 @@ def run_emote_validation(context):
         )
 
     # Approximate root motion, measured on the rig's hips bone rather than the exported hips track.
-    marker = hips_marker(armature.pose.bones, root_motion["hipsPattern"])
+    marker = hips_marker(armature.pose.bones, root_motion["hipsPattern"], get_deform_pose_bones(armature))
     max_horizontal = 0.0
     max_vertical = 0.0
     if marker is None:

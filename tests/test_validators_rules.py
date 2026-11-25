@@ -258,6 +258,12 @@ class TestRootMotionMeasure:
         assert validate_emote.hips_marker(_Bones("mixamorig:Spine", "mixamorig:Hips"), "hips").name == "mixamorig:Hips"
         assert validate_emote.hips_marker(_Bones("root", "HIPS"), "hips").name == "HIPS"
 
+    def test_a_deform_bone_wins_over_a_control_bone_that_also_matches(self):
+        # a custom rig: the mechanism bone comes first in Blender's order, the deforming one is what gets exported
+        bones = _Bones("MCH-hips", "DEF-hips", "spine")
+        assert validate_emote.hips_marker(bones, "hips").name == "MCH-hips"
+        assert validate_emote.hips_marker(bones, "hips", [bones.get("DEF-hips")]).name == "DEF-hips"
+
     def test_the_control_bone_is_the_last_resort(self):
         assert validate_emote.hips_marker(_Bones("CTRL_Avatar_UpperBody", "Avatar_Spine"), "hips").name == (
             "CTRL_Avatar_UpperBody"

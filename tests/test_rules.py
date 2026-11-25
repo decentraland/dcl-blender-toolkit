@@ -190,7 +190,7 @@ class TestValidatorsReadTheManifest:
     def test_root_motion_is_graded_by_the_rule_book(self):
         source = read_source(os.path.join(SRC_DIR, "ops", "validate_emote.py"))
         assert "root_motion_status(max_horizontal)" in source
-        assert 'hips_marker(armature.pose.bones, root_motion["hipsPattern"])' in source
+        assert 'hips_marker(armature.pose.bones, root_motion["hipsPattern"], get_deform_pose_bones(armature))' in source
 
     def test_the_skin_material_is_recognised_by_the_rule_book_not_by_one_name(self):
         source = read_source(os.path.join(SRC_DIR, "ops", "avatar_limitations.py"))
