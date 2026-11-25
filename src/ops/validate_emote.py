@@ -2,7 +2,7 @@ import math
 
 import bpy
 
-from ..rules import manifest
+from ..rules import manifest, root_motion_status
 from .emote_utils import (
     action_matches_armature,
     collect_armature_geometry,
@@ -202,24 +202,32 @@ def run_emote_validation(context):
                 position = armature.matrix_world.translation.copy()
             if reference is None:
                 reference = position.copy()
-            dx = position.x - reference.x
-            dy = position.y - reference.y
-            dz = position.z - reference.z
-            max_horizontal = max(max_horizontal, math.sqrt(dx * dx + dy * dy))
-            max_vertical = max(max_vertical, abs(dz))
+            # Horizontally the rule is the animation area, a cylinder around the scene's origin, so every frame's
+            # distance from that axis counts, the first frame included. Vertically it is the travel from the start.
+            max_horizontal = max(max_horizontal, math.sqrt(position.x * position.x + position.y * position.y))
+            max_vertical = max(max_vertical, abs(position.z - reference.z))
     finally:
         context.scene.frame_set(original_frame)
 
     result["metrics"]["max_horizontal_m"] = round(max_horizontal, 4)
     result["metrics"]["max_vertical_m"] = round(max_vertical, 4)
+    horizontal_warn = root_motion["horizontalWarnMeters"]
     horizontal_limit = root_motion["horizontalErrorMeters"]
     vertical_warn = root_motion["verticalWarnMeters"]
     vertical_limit = root_motion["verticalErrorMeters"]
     approx = "(approximate: measured on the rig's hips bone, the Builder measures the exported hips track)"
-    if max_horizontal > horizontal_limit:
+    horizontal_state = root_motion_status(max_horizontal)
+    if horizontal_state == "error":
         push(
-            f"Horizontal displacement reaches ~{max_horizontal:.2f}m; emotes must stay within {horizontal_limit:g}m {approx}.",
+            f"The hips get ~{max_horizontal:.2f}m from the centre of the animation area; emotes must stay within "
+            f"{horizontal_warn:g}m of it, and up to {horizontal_limit:g}m is accepted with a warning {approx}.",
             is_error=strict_mode,
+        )
+    elif horizontal_state == "warning":
+        push(
+            f"The hips get ~{max_horizontal:.2f}m from the centre of the animation area; emotes should stay within "
+            f"{horizontal_warn:g}m of it. Up to {horizontal_limit:g}m is accepted when the motion has a reason: a "
+            f"curator decides {approx}."
         )
     if max_vertical > vertical_limit:
         push(

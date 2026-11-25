@@ -1,5 +1,5 @@
 {
-  "version": "0.8.0",
+  "version": "0.8.6",
   "triangles": {
     "default": 1500,
     "perCategory": {
@@ -37,12 +37,14 @@
     "default": 2,
     "skin": 5,
     "maxSize": 1024,
-    "facialMaxSize": 512
+    "facialMaxSize": 1024
   },
   "materials": {
     "default": 2,
+    "extraWithEmissionOrAlpha": 1,
     "skin": 5,
     "avatarSkinMat": "AvatarSkin_MAT",
+    "skinNameToken": "skin",
     "forbiddenMeshNamePatterns": [
       "_mouth",
       "_eyebrows",
@@ -58,7 +60,7 @@
     "wearableBytes": 3145728,
     "skinBytes": 9437184,
     "emoteBytes": 3145728,
-    "modelHeadroomBytes": 1048576,
+    "modelHeadroomBytes": 0,
     "emoteModelHeadroomBytes": 0,
     "thumbnailBytes": 1048576,
     "thumbnailMaxSize": 1024,
@@ -129,7 +131,8 @@
     "propClipLengthToleranceSeconds": 0.0333333,
     "audioDurationToleranceSeconds": 0.5,
     "rootMotion": {
-      "horizontalErrorMeters": 1,
+      "horizontalWarnMeters": 1,
+      "horizontalErrorMeters": 1.5,
       "verticalWarnMeters": 1,
       "verticalErrorMeters": 4,
       "hipsPattern": "hips"

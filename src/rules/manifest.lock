@@ -1,8 +1,8 @@
 {
   "package": "@dcl-regenesislabs/wearable-validator",
-  "packageVersion": "0.7.0",
-  "rulesVersion": "0.8.0",
-  "sha256": "81d4d632ad2529122e6dc7f77167bb4f6e07ce02a21356767275f677723cd8ef",
-  "syncedAt": "2026-11-10T11:13:10Z",
-  "source": "https://registry.npmjs.org/@dcl-regenesislabs/wearable-validator/0.7.0"
+  "packageVersion": "0.8.0",
+  "rulesVersion": "0.8.6",
+  "sha256": "e090115774ee68a892efc6efad13459a0986d86947d9dbb195538a111283e36c",
+  "syncedAt": "2026-11-20T18:10:12Z",
+  "source": "https://registry.npmjs.org/@dcl-regenesislabs/wearable-validator/0.8.0"
 }

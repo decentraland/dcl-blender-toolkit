@@ -55,9 +55,11 @@ class TestProvenance:
             "warningMarginRatio",
         } <= set(manifest["triangles"])
         assert {"default", "skin", "maxSize"} <= set(manifest["textures"])
-        assert {"default", "skin", "avatarSkinMat"} <= set(manifest["materials"])
+        assert {"default", "skin", "avatarSkinMat", "skinNameToken", "extraWithEmissionOrAlpha"} <= set(
+            manifest["materials"]
+        )
         assert {"expectedFps", "fpsTolerance", "maxDurationSeconds", "rootMotion"} <= set(manifest["emote"])
-        assert {"horizontalErrorMeters", "verticalWarnMeters", "verticalErrorMeters"} <= set(
+        assert {"horizontalWarnMeters", "horizontalErrorMeters", "verticalWarnMeters", "verticalErrorMeters"} <= set(
             manifest["emote"]["rootMotion"]
         )
         assert {"emoteBytes", "emoteModelHeadroomBytes", "thumbnailBytes"} <= set(manifest["fileSize"])
@@ -103,6 +105,53 @@ class TestTriangleTolerance:
         assert rules.triangle_status(tolerated + 1, limit) == "error"
 
 
+class TestSkinMaterial:
+    """The engine tints any material with "skin" in its name; those are the ones left out of the counts."""
+
+    @pytest.mark.parametrize(
+        "name", ["AvatarSkin_MAT", "AvatarSkin_MAT.001", "AvatarSkin_F_MAT.002", "Avatar_Skin", "skin"]
+    )
+    def test_names_the_engine_treats_as_skin(self, rules, name):
+        assert rules.is_skin_material(name)
+
+    @pytest.mark.parametrize("name", ["Hoodie_MAT", "Material.001", "Hair_MAT", ""])
+    def test_other_names_count(self, rules, name):
+        assert not rules.is_skin_material(name)
+
+    def test_an_empty_token_exempts_nothing(self, rules, monkeypatch):
+        materials = {**rules.manifest()["materials"], "skinNameToken": ""}
+        monkeypatch.setattr(rules, "_manifest", {**rules.manifest(), "materials": materials})
+        assert not rules.is_skin_material("AvatarSkin_MAT")
+
+
+class TestMaterialLimit:
+    def test_fixed_expectations_for_the_rule_book(self, rules):
+        # 2 materials, 3 when the item uses emission or transparency, 5 for skins either way
+        assert rules.material_limit("upper_body", False) == 2
+        assert rules.material_limit("upper_body", True) == 3
+        assert rules.material_limit("skin", False) == 5
+        assert rules.material_limit("skin", True) == 5
+
+
+class TestRootMotion:
+    """Distance of the hips from the centre of the animation area: 1 m is the rule, up to 1.5 m only warns."""
+
+    @pytest.mark.parametrize(
+        "metres, status",
+        [
+            (0.0, "ok"),
+            (1.0, "ok"),
+            (1.01, "warning"),
+            (1.48, "warning"),
+            (1.5, "warning"),
+            (1.51, "error"),
+            (3.0, "error"),
+        ],
+    )
+    def test_fixed_expectations_for_the_rule_book(self, rules, metres, status):
+        assert rules.root_motion_status(metres) == status
+
+
 class TestEmoteModelLimit:
     def test_emotes_use_their_own_headroom(self, rules):
         sizes = rules.manifest()["fileSize"]
@@ -137,6 +186,17 @@ class TestValidatorsReadTheManifest:
         source = read_source(os.path.join(SRC_DIR, "ops", "export_emote_glb.py"))
         assert "emote_model_limit()" in source and "emote_room_for_images()" in source
         assert "file_size > 1024 * 1024" not in source
+
+    def test_root_motion_is_measured_from_the_centre_and_graded_by_the_rule_book(self):
+        source = read_source(os.path.join(SRC_DIR, "ops", "validate_emote.py"))
+        assert "root_motion_status(max_horizontal)" in source
+        # the horizontal measure is the distance from the scene's origin, not the travel from the first frame
+        assert "position.x - reference.x" not in source and "position.x * position.x" in source
+
+    def test_the_skin_material_is_recognised_by_the_rule_book_not_by_one_name(self):
+        source = read_source(os.path.join(SRC_DIR, "ops", "avatar_limitations.py"))
+        assert "is_skin_material(slot.material.name)" in source
+        assert "slot.material.name != skin_material" not in source
 
     def test_fps_is_compared_with_the_tolerance(self):
         source = read_source(os.path.join(SRC_DIR, "ops", "validate_emote.py"))

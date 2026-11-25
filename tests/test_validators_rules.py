@@ -108,6 +108,14 @@ class TestWearableLimits:
     def test_triangle_icon_follows_the_rule_book_severity(self, count, icon):
         assert avatar_limitations.triangles_icon(count, 1500) == icon
 
+    def test_material_limit_grows_by_one_with_emission_or_transparency(self):
+        hat = avatar_limitations.wearable_limits("HAT")
+        skin = avatar_limitations.wearable_limits("SKIN")
+        assert avatar_limitations.effective_material_limit(hat, {"emission_or_alpha": False}) == 2
+        assert avatar_limitations.effective_material_limit(hat, {"emission_or_alpha": True}) == 3
+        assert avatar_limitations.effective_material_limit(hat, {}) == 2
+        assert avatar_limitations.effective_material_limit(skin, {"emission_or_alpha": True}) == 5
+
     def test_every_type_has_a_category_the_rule_book_knows(self):
         per_category = rules.manifest()["triangles"]["perCategory"]
         for _label, category, _hides in avatar_limitations.WEARABLE_TYPES.values():
@@ -136,3 +144,47 @@ class TestWearableLimits:
     def test_unknown_type_is_an_error(self):
         with pytest.raises(KeyError):
             avatar_limitations.wearable_limits("CAPE")
+
+
+def _socket(value, linked=False):
+    return SimpleNamespace(default_value=value, is_linked=linked)
+
+
+def _material(inputs=None, blend_method="OPAQUE", use_nodes=True):
+    """A stand-in for a Blender material with one Principled BSDF whose inputs are given by name."""
+    node = SimpleNamespace(type="BSDF_PRINCIPLED", inputs=inputs or {})
+    return SimpleNamespace(use_nodes=use_nodes, node_tree=SimpleNamespace(nodes=[node]), blend_method=blend_method)
+
+
+class TestMaterialTraits:
+    """What earns the third material, read from the Principled BSDF the way the glTF exporter does."""
+
+    def test_emissive_needs_a_strength_and_a_colour_that_is_not_black(self):
+        glowing = _material({"Emission Color": _socket((1.0, 0.4, 0.0, 1.0)), "Emission Strength": _socket(1.0)})
+        black = _material({"Emission Color": _socket((0.0, 0.0, 0.0, 1.0)), "Emission Strength": _socket(1.0)})
+        off = _material({"Emission Color": _socket((1.0, 1.0, 1.0, 1.0)), "Emission Strength": _socket(0.0)})
+        textured = _material(
+            {"Emission Color": _socket((0.0, 0.0, 0.0, 1.0), linked=True), "Emission Strength": _socket(1.0)}
+        )
+        assert avatar_limitations.material_is_emissive(glowing)
+        assert not avatar_limitations.material_is_emissive(black)
+        assert not avatar_limitations.material_is_emissive(off)
+        assert avatar_limitations.material_is_emissive(textured)
+
+    def test_emissive_reads_the_older_input_name_too(self):
+        older = _material({"Emission": _socket((0.2, 0.2, 0.2, 1.0)), "Emission Strength": _socket(2.0)})
+        assert avatar_limitations.material_is_emissive(older)
+
+    def test_transparent_is_an_alpha_input_that_is_linked_or_below_one(self):
+        assert avatar_limitations.material_is_transparent(_material({"Alpha": _socket(0.5)}))
+        assert avatar_limitations.material_is_transparent(_material({"Alpha": _socket(1.0, linked=True)}))
+        assert not avatar_limitations.material_is_transparent(_material({"Alpha": _socket(1.0)}))
+
+    def test_the_blend_mode_alone_says_nothing_from_blender_4_2_on(self):
+        # there the property mirrors the render method (a new material reads HASHED) and the exporter ignores it
+        assert not avatar_limitations.material_is_transparent(_material({"Alpha": _socket(1.0)}, blend_method="HASHED"))
+
+    def test_a_material_without_nodes_has_neither(self):
+        plain = _material(use_nodes=False)
+        assert not avatar_limitations.material_is_emissive(plain)
+        assert not avatar_limitations.material_is_transparent(plain)

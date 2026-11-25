@@ -1,6 +1,14 @@
 import bpy
 
-from ..rules import manifest, rules_version, triangle_limit, triangle_status, triangle_tolerated_limit
+from ..rules import (
+    is_skin_material,
+    manifest,
+    material_limit,
+    rules_version,
+    triangle_limit,
+    triangle_status,
+    triangle_tolerated_limit,
+)
 
 # Toolkit wearable types mapped to the rule book's category and hidden slots.
 WEARABLE_TYPES = {
@@ -38,6 +46,48 @@ def triangles_icon(count, limit):
     return "WARNING_LARGE" if limit and count / limit >= 0.8 else "CHECKMARK"
 
 
+def _principled_input(material, *names):
+    """A Principled BSDF input of the material by name (names differ between Blender versions), or None."""
+    tree = getattr(material, "node_tree", None)
+    if not getattr(material, "use_nodes", False) or tree is None:
+        return None
+    for node in tree.nodes:
+        if node.type != "BSDF_PRINCIPLED":
+            continue
+        for name in names:
+            socket = node.inputs.get(name)
+            if socket is not None:
+                return socket
+    return None
+
+
+def material_is_emissive(material):
+    """Approximates what the glTF exporter writes as emission: a strength above zero and a colour that is not black."""
+    strength = _principled_input(material, "Emission Strength")
+    color = _principled_input(material, "Emission Color", "Emission")
+    if color is None:
+        return False
+    if strength is not None and not strength.is_linked and strength.default_value <= 0:
+        return False
+    return bool(color.is_linked or any(channel > 0 for channel in tuple(color.default_value)[:3]))
+
+
+def material_is_transparent(material):
+    """Approximates the exporter's alpha mode: an Alpha input that is linked or below 1, or a blended/clipped material."""
+    alpha = _principled_input(material, "Alpha")
+    if alpha is not None and (alpha.is_linked or alpha.default_value < 1):
+        return True
+    # Before 4.2 the exporter reads the blend mode. From 4.2 on that property mirrors the render method and says
+    # nothing about the export, so only the Alpha input counts there.
+    version = tuple(getattr(getattr(bpy, "app", None), "version", (4, 2, 0)))
+    return version < (4, 2, 0) and getattr(material, "blend_method", "OPAQUE") in {"BLEND", "CLIP", "HASHED"}
+
+
+def effective_material_limit(limits, usage):
+    """The material limit for what is selected: the rule book allows one more with emission or transparency."""
+    return material_limit(limits["category"], usage.get("emission_or_alpha", False))
+
+
 def wearable_limits(wearable_type):
     """Triangle, material and texture limits for a toolkit wearable type, from the vendored rule book."""
     rules = manifest()
@@ -50,6 +100,7 @@ def wearable_limits(wearable_type):
         "triangles_tolerated": triangle_tolerated_limit(triangles),
         "textures": rules["textures"][bucket],
         "materials": rules["materials"][bucket],
+        "category": category,
         "skin_material": rules["materials"]["avatarSkinMat"],
         "texture_resolution": f"{max_size}x{max_size}px or lower",
         "texture_requirements": "Square textures at 72 pixel/inch resolution",
@@ -94,13 +145,16 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
                 triangle_count += len(obj.data.loop_triangles)
 
         # Count materials used by selected objects
+        # The skin material is left out as the engine recognises it: any material with "skin" in its name.
         materials_used = set()
-        skin_material = manifest()["materials"]["avatarSkinMat"]
+        emission_or_alpha = False
         for obj in bpy.context.selected_objects:
             if obj.type == "MESH" and obj.data:
                 for slot in obj.material_slots:
-                    if slot.material and slot.material.name != skin_material:
+                    if slot.material and not is_skin_material(slot.material.name):
                         materials_used.add(slot.material.name)
+                        if material_is_emissive(slot.material) or material_is_transparent(slot.material):
+                            emission_or_alpha = True
 
         material_count = len(materials_used)
 
@@ -115,7 +169,12 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
 
         texture_count = len(textures_used)
 
-        return {"triangles": triangle_count, "materials": material_count, "textures": texture_count}
+        return {
+            "triangles": triangle_count,
+            "materials": material_count,
+            "textures": texture_count,
+            "emission_or_alpha": emission_or_alpha,
+        }
 
     def execute(self, context):
         if not bpy.context.selected_objects:
@@ -124,6 +183,7 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
 
         limitations = self.calculate_limitations(self.wearable_type)
         current_usage = self.count_current_usage()
+        materials_limit = effective_material_limit(limitations, current_usage)
 
         # Create a detailed report
         report_lines = [
@@ -133,7 +193,7 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
             "",
             "LIMITATIONS (Current / Limit):",
             f"• Triangles: {current_usage['triangles']:,} / {limitations['triangles']:,} ({self._get_percentage(current_usage['triangles'], limitations['triangles'])}%)",
-            f"• Materials: {current_usage['materials']} / {limitations['materials']} ({self._get_percentage(current_usage['materials'], limitations['materials'])}%)",
+            f"• Materials: {current_usage['materials']} / {materials_limit} ({self._get_percentage(current_usage['materials'], materials_limit)}%)",
             f"• Textures: {current_usage['textures']} / {limitations['textures']} ({self._get_percentage(current_usage['textures'], limitations['textures'])}%)",
             "",
             "TEXTURE REQUIREMENTS:",
@@ -142,7 +202,9 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
             "",
             "IMPORTANT NOTES:",
             "• Only selected objects are counted",
-            f"• {limitations['skin_material']} material is not counted toward material limit",
+            f'• Skin materials (any with "skin" in the name, such as {limitations["skin_material"]}) are not counted',
+            "• One more material is allowed when the item uses emission or transparency (approximate: read from the",
+            "  Principled BSDF; the Builder reads the exported GLB)",
             "• All textures must be square and 72 pixel/inch resolution",
             f"• Limits follow the Decentraland rule book v{rules_version()}",
         ]
@@ -161,8 +223,14 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
                 f"❌ TRIANGLES: Exceeding limit by {triangles_over:,}. Above {limitations['triangles_tolerated']:,} "
                 "the item is rejected"
             )
-        if current_usage["materials"] > limitations["materials"]:
-            warnings.append(f"⚠️  MATERIALS: Exceeding limit by {current_usage['materials'] - limitations['materials']}")
+        if current_usage["materials"] > materials_limit:
+            with_extra = material_limit(limitations["category"], True)
+            hint = (
+                f". Up to {with_extra} are accepted only when one of them is emissive or transparent"
+                if materials_limit < with_extra and current_usage["materials"] <= with_extra
+                else ""
+            )
+            warnings.append(f"⚠️  MATERIALS: Exceeding limit by {current_usage['materials'] - materials_limit}{hint}")
         if current_usage["textures"] > limitations["textures"]:
             warnings.append(f"⚠️  TEXTURES: Exceeding limit by {current_usage['textures'] - limitations['textures']}")
 
@@ -217,7 +285,8 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
 
             # Show current usage vs limits
             triangles_pct = self._get_percentage(current_usage["triangles"], limitations["triangles"])
-            materials_pct = self._get_percentage(current_usage["materials"], limitations["materials"])
+            materials_limit = effective_material_limit(limitations, current_usage)
+            materials_pct = self._get_percentage(current_usage["materials"], materials_limit)
             textures_pct = self._get_percentage(current_usage["textures"], limitations["textures"])
 
             # Color coding for usage levels
@@ -237,7 +306,7 @@ class OBJECT_OT_avatar_limitations(bpy.types.Operator):
                 icon=triangles_icon(current_usage["triangles"], limitations["triangles"]),
             )
             col.label(
-                text=f"Materials: {current_usage['materials']} / {limitations['materials']} ({materials_pct}%)",
+                text=f"Materials: {current_usage['materials']} / {materials_limit} ({materials_pct}%)",
                 icon=get_icon(materials_pct),
             )
             col.label(
